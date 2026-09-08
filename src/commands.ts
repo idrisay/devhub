@@ -6,6 +6,8 @@ import type { CacheStore } from './infra/CacheStore';
 import { config } from './infra/Config';
 import { log } from './infra/Logger';
 import type { Hub } from './providers/Hub';
+import type { JiraIssue } from './providers/jira/JiraClient';
+import { renderPrompt } from './providers/jira/promptTemplate';
 import { findInProgressTransition } from './providers/jira/transitions';
 import type { ProviderTree } from './ui/ProviderTree';
 import type { PullRequestTree } from './ui/PullRequestTree';
@@ -32,6 +34,12 @@ function providerFrom(arg: unknown): ProviderId | undefined {
   }
   const node = arg as { id?: unknown } | undefined;
   return AuthManager.isProviderId(node?.id) ? node.id : undefined;
+}
+
+/** The issue behind a tree row, for commands that need more than its key. */
+function issueFrom(arg: unknown): JiraIssue | undefined {
+  const node = arg as { issue?: JiraIssue } | undefined;
+  return node?.issue?.key ? node.issue : undefined;
 }
 
 function keyFrom(arg: unknown): string | undefined {
@@ -383,6 +391,26 @@ export function registerCommands(deps: Deps): vscode.Disposable[] {
     log.show();
   };
 
+  /**
+   * The task's ticket as a ready-to-paste instruction, from
+   * `devhub.tasks.promptTemplate`.
+   *
+   * Invoked from a row it uses that row's issue; from the palette it falls back
+   * to the branch's ticket, which is what the other ticket commands do.
+   */
+  const copyTaskPrompt = async (arg?: unknown) => {
+    const issue = issueFrom(arg) ?? hub.current.issue;
+    if (!issue) {
+      void vscode.window.showInformationMessage(
+        'DevHub: no ticket for this row or branch, so there is nothing to copy.'
+      );
+      return;
+    }
+    const text = renderPrompt(config.tasks.promptTemplate(), issue);
+    await vscode.env.clipboard.writeText(text);
+    void vscode.window.showInformationMessage(`DevHub: copied the prompt for ${issue.key}.`);
+  };
+
   const showActions = async () => {
     const { context, issue } = hub.current;
     const actions: { label: string; command: string; description?: string }[] = [];
@@ -462,6 +490,7 @@ export function registerCommands(deps: Deps): vscode.Disposable[] {
     vscode.commands.registerCommand('devhub.tasks.setSort', () => taskTree.pickSort()),
     vscode.commands.registerCommand('devhub.pullRequests.setSort', () => pullRequestTree.pickSort()),
     vscode.commands.registerCommand('devhub.copyBranchName', copyBranchName),
+    vscode.commands.registerCommand('devhub.tasks.copyPrompt', copyTaskPrompt),
     vscode.commands.registerCommand('devhub.diagnosePathMapping', diagnosePathMapping),
     vscode.commands.registerCommand('devhub.showLogs', () => log.show()),
     vscode.commands.registerCommand('devhub.clearCache', async () => {

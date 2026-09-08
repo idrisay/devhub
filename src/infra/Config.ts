@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { DEFAULT_PROMPT_TEMPLATE } from '../providers/jira/promptTemplate';
 import { normaliseOrgSlug } from '../providers/sentry/orgSlug';
 
 export interface PathMapping {
@@ -44,6 +45,13 @@ export const config = {
     pathMappings: (): PathMapping[] => section().get<PathMapping[]>('sentry.pathMappings', []),
     diagnostics: (): boolean => section().get<boolean>('sentry.diagnostics', true),
     codeLens: (): boolean => section().get<boolean>('sentry.codeLens', true)
+  },
+
+  tasks: {
+    // Empty means the built-in template, so an override is opt-in and the
+    // default only exists in one place.
+    promptTemplate: (): string =>
+      section().get<string>('tasks.promptTemplate', '').trim() || DEFAULT_PROMPT_TEMPLATE
   },
 
   figma: {

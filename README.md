@@ -70,6 +70,20 @@ The status filter can only offer statuses that this query returned, so widen it 
 
 Results are cached for two minutes and revalidated in the background, so switching branches costs no requests. **DevHub: Refresh** always refetches.
 
+### Copying a task as a prompt
+
+Every row has a clipboard button that copies the ticket as a ready-to-paste instruction — useful for handing a ticket to a coding agent without retyping the same preamble. It defaults to a two-stage *investigate, report a confidence score, wait for a green flag, then implement* prompt.
+
+Override it with `devhub.tasks.promptTemplate`:
+
+```jsonc
+{ "devhub.tasks.promptTemplate": "Read ${url} and summarise the acceptance criteria." }
+```
+
+`${url}`, `${key}`, `${summary}`, `${type}` and `${status}` are filled in from the row. An unrecognised placeholder is left as written, so a typo shows up in the pasted text rather than silently deleting a line. Leave the setting empty for the built-in default.
+
+The same command works from the palette as **DevHub: Copy prompt for task**, where it uses the current branch's ticket.
+
 ## Pull requests
 
 Three groups, all scoped to the GitHub repositories open in your workspace:

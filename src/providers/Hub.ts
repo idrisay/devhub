@@ -51,6 +51,7 @@ export class Hub implements vscode.Disposable {
 
   private readonly disposables: vscode.Disposable[] = [];
   private inFlight?: vscode.CancellationTokenSource;
+  private refreshingGitHub = false;
 
   private snapshot: HubSnapshot = {
     context: { changedFiles: [], pinned: false, repos: [] },
@@ -91,9 +92,11 @@ export class Hub implements vscode.Disposable {
       this.jira.onDidChange(() => this.emit()),
       this.sentry.onDidChange(() => this.emit()),
       this.figma.onDidChange(() => this.emit()),
-      // A full refresh, not an emit: the mergeability recheck writes its result
-      // into the cache, so the data only reaches the snapshot by being re-read.
-      this.github.onDidChange(() => void this.refresh())
+      // Not a full refresh: the mergeability recheck writes into the cache, so
+      // the new data only reaches the snapshot by being re-read — but re-running
+      // the whole fan-out for it also re-queries Jira and Sentry, which is how
+      // a background GitHub revalidation turns into a rate-limit storm.
+      this.github.onDidChange(() => void this.refreshGitHub())
     );
   }
 
@@ -150,7 +153,7 @@ export class Hub implements vscode.Disposable {
       designs: figma.status === 'fulfilled' ? figma.value : [],
       // Keep the last good list on failure rather than blanking the view; the
       // task tree reads jiraStatus to say why it may be out of date.
-      tasks: tasks.status === 'fulfilled' ? tasks.value : this.snapshot.tasks,
+      tasks: (tasks.status === 'fulfilled' ? tasks.value : undefined) ?? this.snapshot.tasks,
       priorityOrder:
         priorities.status === 'fulfilled' ? priorities.value : this.snapshot.priorityOrder,
       loading: false,
@@ -182,6 +185,40 @@ export class Hub implements vscode.Disposable {
     }
 
     this.emit();
+  }
+
+  /**
+   * Re-reads only the GitHub half of the snapshot. Both reads are cached, so
+   * the call that triggered this finds a fresh entry and does not fire again.
+   */
+  private async refreshGitHub(): Promise<void> {
+    if (this.refreshingGitHub) {
+      return;
+    }
+    this.refreshingGitHub = true;
+    const source = new vscode.CancellationTokenSource();
+    try {
+      const ctx = this.snapshot.context;
+      const [pull, queues] = await Promise.allSettled([
+        this.github.forContext(ctx, source.token),
+        this.github.pullQueues(ctx, source.token)
+      ]);
+
+      this.snapshot = {
+        ...this.snapshot,
+        pull: pull.status === 'fulfilled' ? pull.value[0] : this.snapshot.pull,
+        myPulls: queues.status === 'fulfilled' ? queues.value.mine : this.snapshot.myPulls,
+        reviewRequests:
+          queues.status === 'fulfilled'
+            ? queues.value.reviewRequested
+            : this.snapshot.reviewRequests,
+        githubStatus: this.github.status()
+      };
+      this.emit();
+    } finally {
+      source.dispose();
+      this.refreshingGitHub = false;
+    }
   }
 
   private emit(): void {

@@ -13,6 +13,7 @@ import {
   statusFacets
 } from '../src/providers/jira/taskSort';
 import { findInProgressTransition } from '../src/providers/jira/transitions';
+import { DEFAULT_PROMPT_TEMPLATE, renderPrompt } from '../src/providers/jira/promptTemplate';
 import { dedupeRepos, parseGitHubRemote } from '../src/providers/github/remoteUrl';
 import { graphqlEndpoint, hostFor } from '../src/providers/github/endpoints';
 import { buildPullSearch, withinScope } from '../src/providers/github/searchQuery';
@@ -418,6 +419,29 @@ check('configured but absent matches nothing', findInProgressTransition(workflow
 check('doing is conventional too', findInProgressTransition([{ id: '5', name: 'Doing', to: 'Doing' }])?.id, '5');
 check('no conventional name', findInProgressTransition([{ id: '9', name: 'Triage', to: 'Triage' }]), undefined);
 check('no transitions', findInProgressTransition([]), undefined);
+
+console.log('task prompt template');
+const ticket = {
+  key: 'ACME-2393',
+  summary: 'Dashboard check-in height',
+  issueType: 'Bug',
+  status: 'In Progress',
+  url: 'https://acme.atlassian.net/browse/ACME-2393'
+};
+check('url', renderPrompt('ticket ${url}', ticket), 'ticket https://acme.atlassian.net/browse/ACME-2393');
+check('every placeholder', renderPrompt('${key}|${summary}|${type}|${status}', ticket),
+  'ACME-2393|Dashboard check-in height|Bug|In Progress');
+check('repeated placeholder', renderPrompt('${key} then ${key}', ticket), 'ACME-2393 then ACME-2393');
+// A typo should be visible in the pasted text, not silently blanked.
+check('unknown placeholder is left alone', renderPrompt('${nope} ${key}', ticket), '${nope} ACME-2393');
+check('template without placeholders', renderPrompt('no placeholders here', ticket), 'no placeholders here');
+check('empty template', renderPrompt('', ticket), '');
+
+// The built-in default must actually substitute, and must not leak a placeholder.
+const rendered = renderPrompt(DEFAULT_PROMPT_TEMPLATE, ticket);
+check('default template substitutes the url', rendered.includes(ticket.url), true);
+check('default template leaves no placeholders', /\$\{\w+\}/.test(rendered), false);
+check('default template keeps its two stages', rendered.includes('Stage 1') && rendered.includes('Stage 2'), true);
 
 console.log(failures === 0 ? '\nAll checks passed.' : `\n${failures} check(s) failed.`);
 process.exit(failures === 0 ? 0 : 1);

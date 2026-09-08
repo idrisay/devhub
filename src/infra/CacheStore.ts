@@ -36,7 +36,14 @@ export class CacheStore {
    * data we already have.
    */
   async wrap<T>(key: string, options: CacheOptions, load: () => Promise<T>): Promise<T> {
-    const entry = this.context.globalState.get<Entry<T>>(PREFIX + key);
+    const stored = this.context.globalState.get<Entry<T>>(PREFIX + key);
+
+    // `update()` serialises to JSON, which drops an `undefined` value and
+    // leaves `{ storedAt }` behind. That reads back as a present entry whose
+    // value is undefined, and serving it hands the caller undefined where its
+    // own signature promised an array — the caller then stores that and blows
+    // up somewhere unrelated. Treat it as a miss.
+    const entry = stored && stored.value !== undefined ? stored : undefined;
     const age = entry ? Date.now() - entry.storedAt : Infinity;
 
     if (entry && age < options.ttl) {
