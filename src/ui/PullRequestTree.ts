@@ -240,7 +240,7 @@ export class PullRequestTree implements vscode.TreeDataProvider<Node>, vscode.Di
         tooltip.appendMarkdown(`Opened ${opened} ago · updated ${touched} ago`);
         item.tooltip = tooltip;
 
-        item.contextValue = 'devhub.pull';
+        item.contextValue = `devhub.pull.${node.group}`;
         item.command = {
           command: 'vscode.open',
           title: 'Open pull request',

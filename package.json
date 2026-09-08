@@ -151,6 +151,12 @@
         "icon": "$(clippy)"
       },
       {
+        "command": "devhub.pullRequests.copyReviewPrompt",
+        "title": "Copy review prompt for pull request",
+        "category": "DevHub",
+        "icon": "$(clippy)"
+      },
+      {
         "command": "devhub.diagnosePathMapping",
         "title": "Diagnose Sentry path mapping\u2026",
         "category": "DevHub"
@@ -259,6 +265,11 @@
           "command": "devhub.tasks.copyPrompt",
           "when": "view == devhub.tasks && viewItem == devhub.task",
           "group": "inline"
+        },
+        {
+          "command": "devhub.pullRequests.copyReviewPrompt",
+          "when": "view == devhub.pullRequests && viewItem == devhub.pull.review",
+          "group": "inline"
         }
       ],
       "commandPalette": [
@@ -272,6 +283,10 @@
         },
         {
           "command": "devhub.clearCredentials",
+          "when": "false"
+        },
+        {
+          "command": "devhub.pullRequests.copyReviewPrompt",
           "when": "false"
         }
       ]
@@ -404,6 +419,12 @@
           "minimum": 1,
           "maximum": 100,
           "description": "Maximum pull requests to fetch per queue."
+        },
+        "devhub.github.reviewPromptTemplate": {
+          "type": "string",
+          "default": "",
+          "editPresentation": "multilineText",
+          "markdownDescription": "Text copied by the clipboard button on a row in **Awaiting my review**. Placeholders: `${url}`, `${repo}`, `${number}`, `${title}`, `${author}`, `${key}` (the ticket key found in the pull request title, empty if there is none). Leave empty to use the built-in review prompt."
         },
         "devhub.statusBar.enabled": {
           "type": "boolean",

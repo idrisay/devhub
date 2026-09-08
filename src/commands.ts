@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { renderBranchName } from './context/ticketKeyResolver';
+import { findTicketKey, renderBranchName } from './context/ticketKeyResolver';
 import type { WorkContextService } from './context/WorkContextService';
 import { AuthManager, ProviderId, TokenValidator } from './infra/AuthManager';
 import type { CacheStore } from './infra/CacheStore';
@@ -7,6 +7,8 @@ import { config } from './infra/Config';
 import { log } from './infra/Logger';
 import type { Hub } from './providers/Hub';
 import type { JiraIssue } from './providers/jira/JiraClient';
+import type { PullSummary } from './providers/github/pullStatus';
+import { renderReviewPrompt } from './providers/github/reviewPrompt';
 import { renderPrompt } from './providers/jira/promptTemplate';
 import { findInProgressTransition } from './providers/jira/transitions';
 import type { ProviderTree } from './ui/ProviderTree';
@@ -40,6 +42,12 @@ function providerFrom(arg: unknown): ProviderId | undefined {
 function issueFrom(arg: unknown): JiraIssue | undefined {
   const node = arg as { issue?: JiraIssue } | undefined;
   return node?.issue?.key ? node.issue : undefined;
+}
+
+/** The pull request behind a row in the Pull requests view. */
+function pullFrom(arg: unknown): PullSummary | undefined {
+  const node = arg as { pull?: PullSummary } | undefined;
+  return node?.pull?.url ? node.pull : undefined;
 }
 
 function keyFrom(arg: unknown): string | undefined {
@@ -411,6 +419,30 @@ export function registerCommands(deps: Deps): vscode.Disposable[] {
     void vscode.window.showInformationMessage(`DevHub: copied the prompt for ${issue.key}.`);
   };
 
+  /**
+   * A pull request awaiting review, as a ready-to-paste instruction, from
+   * `devhub.github.reviewPromptTemplate`.
+   *
+   * The ticket key is resolved here rather than in the renderer because the
+   * pattern is a setting; the PR title is where it usually lives, with the
+   * branch-derived key as the fallback.
+   */
+  const copyReviewPrompt = async (arg?: unknown) => {
+    const pull = pullFrom(arg);
+    if (!pull) {
+      void vscode.window.showInformationMessage(
+        'DevHub: run this from a row in Awaiting my review.'
+      );
+      return;
+    }
+    const ticketKey = findTicketKey(pull.title) ?? hub.current.context.ticketKey ?? '';
+    const text = renderReviewPrompt(config.github.reviewPromptTemplate(), pull, ticketKey);
+    await vscode.env.clipboard.writeText(text);
+    void vscode.window.showInformationMessage(
+      `DevHub: copied the review prompt for ${pull.repo}#${pull.number}.`
+    );
+  };
+
   const showActions = async () => {
     const { context, issue } = hub.current;
     const actions: { label: string; command: string; description?: string }[] = [];
@@ -491,6 +523,7 @@ export function registerCommands(deps: Deps): vscode.Disposable[] {
     vscode.commands.registerCommand('devhub.pullRequests.setSort', () => pullRequestTree.pickSort()),
     vscode.commands.registerCommand('devhub.copyBranchName', copyBranchName),
     vscode.commands.registerCommand('devhub.tasks.copyPrompt', copyTaskPrompt),
+    vscode.commands.registerCommand('devhub.pullRequests.copyReviewPrompt', copyReviewPrompt),
     vscode.commands.registerCommand('devhub.diagnosePathMapping', diagnosePathMapping),
     vscode.commands.registerCommand('devhub.showLogs', () => log.show()),
     vscode.commands.registerCommand('devhub.clearCache', async () => {

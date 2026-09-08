@@ -14,6 +14,10 @@ import {
 } from '../src/providers/jira/taskSort';
 import { findInProgressTransition } from '../src/providers/jira/transitions';
 import { DEFAULT_PROMPT_TEMPLATE, renderPrompt } from '../src/providers/jira/promptTemplate';
+import {
+  DEFAULT_REVIEW_PROMPT_TEMPLATE,
+  renderReviewPrompt
+} from '../src/providers/github/reviewPrompt';
 import { dedupeRepos, parseGitHubRemote } from '../src/providers/github/remoteUrl';
 import { graphqlEndpoint, hostFor } from '../src/providers/github/endpoints';
 import { buildPullSearch, withinScope } from '../src/providers/github/searchQuery';
@@ -442,6 +446,28 @@ const rendered = renderPrompt(DEFAULT_PROMPT_TEMPLATE, ticket);
 check('default template substitutes the url', rendered.includes(ticket.url), true);
 check('default template leaves no placeholders', /\$\{\w+\}/.test(rendered), false);
 check('default template keeps its two stages', rendered.includes('Stage 1') && rendered.includes('Stage 2'), true);
+
+console.log('review prompt template');
+const reviewed = {
+  url: 'https://github.com/acme/mobile/pull/103',
+  repo: 'acme/mobile',
+  number: 103,
+  title: 'ACME-2393 fix login redirect',
+  author: 'ana'
+};
+check('url', renderReviewPrompt('Review ${url}', reviewed), 'Review https://github.com/acme/mobile/pull/103');
+check('every placeholder', renderReviewPrompt('${repo}#${number} ${title} by ${author}', reviewed),
+  'acme/mobile#103 ACME-2393 fix login redirect by ana');
+check('ticket key comes from the caller', renderReviewPrompt('${key}', reviewed, 'ACME-2393'), 'ACME-2393');
+// A known-but-absent key renders empty; only a genuine typo is left as written.
+check('no ticket key renders empty', renderReviewPrompt('[${key}]', reviewed), '[]');
+check('unknown placeholder is left alone', renderReviewPrompt('${nope} ${repo}', reviewed), '${nope} acme/mobile');
+
+const review = renderReviewPrompt(DEFAULT_REVIEW_PROMPT_TEMPLATE, reviewed);
+check('default template substitutes the url', review.includes(reviewed.url), true);
+check('default template leaves no placeholders', /\$\{\w+\}/.test(review), false);
+check('default template asks for a single combined review', review.includes('single, concise review'), true);
+check('default template forbids naming the tools in the review', review.includes('Do not mention'), true);
 
 console.log(failures === 0 ? '\nAll checks passed.' : `\n${failures} check(s) failed.`);
 process.exit(failures === 0 ? 0 : 1);

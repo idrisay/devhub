@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { DEFAULT_REVIEW_PROMPT_TEMPLATE } from '../providers/github/reviewPrompt';
 import { DEFAULT_PROMPT_TEMPLATE } from '../providers/jira/promptTemplate';
 import { normaliseOrgSlug } from '../providers/sentry/orgSlug';
 
@@ -65,7 +66,10 @@ export const config = {
     limit: (): number => {
       const value = section().get<number>('github.limit', 50);
       return Math.min(Math.max(Math.trunc(value) || 50, 1), 100);
-    }
+    },
+    reviewPromptTemplate: (): string =>
+      section().get<string>('github.reviewPromptTemplate', '').trim() ||
+      DEFAULT_REVIEW_PROMPT_TEMPLATE
   },
 
   onDidChange(listener: (e: vscode.ConfigurationChangeEvent) => void): vscode.Disposable {

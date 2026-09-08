@@ -129,6 +129,20 @@ Both queues come back in **one GraphQL request**. REST can't do this: its search
 
 GitHub computes mergeability lazily: the first request for a pull request it hasn't recently merge-tested returns `UNKNOWN` and *starts* the calculation, so the answer only exists once you ask twice. DevHub re-asks a few seconds later, at most twice, and only while some pull request still has no answer — there's no timer running once they all do. Until then the row simply shows no conflict state, and the tooltip says why.
 
+### Copying a review as a prompt
+
+Rows under **Awaiting my review** have a clipboard button that copies the pull request as a ready-to-paste instruction — the counterpart to the one in My tasks. It defaults to a prompt that reviews the PR, gathers independent findings, folds them into one review and submits it as yours.
+
+Override it with `devhub.github.reviewPromptTemplate`:
+
+```jsonc
+{ "devhub.github.reviewPromptTemplate": "Summarise the risk in ${url} in three bullets." }
+```
+
+`${url}`, `${repo}`, `${number}`, `${title}`, `${author}` and `${key}` are filled in from the row. `${key}` is the ticket key found in the pull request title, falling back to the current branch's; it renders empty when there is none, whereas an unrecognised placeholder is left as written. Leave the setting empty for the built-in default.
+
+The button is on the review queue only — your own pull requests don't get it — and it needs a row, so it isn't offered in the command palette.
+
 Review comments on the current branch's pull request also appear in the Problems panel, on the lines they were left on, at Information severity — Sentry's production errors are warnings, so the two stay tellable apart. Clicking a comment row jumps to the line in your working tree; if the comment isn't on a line, it opens on GitHub instead.
 
 Results are cached for a minute and revalidated in the background. **DevHub: Refresh** always refetches; nothing polls on a schedule.
