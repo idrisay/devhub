@@ -13,6 +13,13 @@ import {
   statusFacets
 } from '../src/providers/jira/taskSort';
 import { findInProgressTransition } from '../src/providers/jira/transitions';
+import {
+  repoWorkFingerprint,
+  sortRepoWork,
+  ticketKeysOf,
+  withTickets,
+  type RepoWork
+} from '../src/context/repoWork';
 import { DEFAULT_PROMPT_TEMPLATE, renderPrompt } from '../src/providers/jira/promptTemplate';
 import {
   DEFAULT_REVIEW_PROMPT_TEMPLATE,
@@ -468,6 +475,32 @@ check('default template substitutes the url', review.includes(reviewed.url), tru
 check('default template leaves no placeholders', /\$\{\w+\}/.test(review), false);
 check('default template asks for a single combined review', review.includes('single, concise review'), true);
 check('default template forbids naming the tools in the review', review.includes('Do not mention'), true);
+
+console.log('per-repository work');
+function work(over: Partial<RepoWork> = {}): RepoWork {
+  return { root: '/w/web', name: 'web', branch: 'main', pinned: false, active: false, ...over };
+}
+const web = work({ root: '/w/web', name: 'web', branch: 'ACME-1-x', ticketKey: 'ACME-1' });
+const api = work({ root: '/w/api', name: 'api', branch: 'ACME-2-y', ticketKey: 'ACME-2', active: true });
+const infra = work({ root: '/w/infra', name: 'infra', branch: 'develop' });
+
+// Active first, then alphabetical — the order must not shift as data arrives.
+check('active repo leads', sortRepoWork([web, infra, api]).map((w) => w.name), ['api', 'infra', 'web']);
+check('alphabetical without an active repo', sortRepoWork([web, infra]).map((w) => w.name), ['infra', 'web']);
+check('sorting does not mutate', (() => { const input = [web, api]; sortRepoWork(input); return input.map((w) => w.name); })(), ['web', 'api']);
+
+check('only repos with a ticket', withTickets([web, api, infra]).map((w) => w.name), ['web', 'api']);
+check('no tickets anywhere', withTickets([infra]), []);
+
+check('distinct keys in list order', ticketKeysOf([web, api, infra]), ['ACME-1', 'ACME-2']);
+// A frontend and a backend on the same ticket must cost one fetch, not two.
+check('shared ticket is fetched once', ticketKeysOf([web, work({ name: 'api', root: '/w/api', ticketKey: 'ACME-1' })]), ['ACME-1']);
+check('no keys', ticketKeysOf([infra]), []);
+
+check('fingerprint is stable', repoWorkFingerprint([web, api]) === repoWorkFingerprint([web, api]), true);
+check('fingerprint notices a branch change', repoWorkFingerprint([web]) === repoWorkFingerprint([work({ ...web, branch: 'other' })]), false);
+check('fingerprint notices a new ticket', repoWorkFingerprint([infra]) === repoWorkFingerprint([work({ ...infra, ticketKey: 'ACME-9' })]), false);
+check('fingerprint notices the active repo moving', repoWorkFingerprint([web]) === repoWorkFingerprint([work({ ...web, active: true })]), false);
 
 console.log(failures === 0 ? '\nAll checks passed.' : `\n${failures} check(s) failed.`);
 process.exit(failures === 0 ? 0 : 1);

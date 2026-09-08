@@ -14,7 +14,10 @@ import type { Provider, ProviderStatus } from './Provider';
 
 export interface HubSnapshot {
   context: WorkContext;
+  /** The active repository's issue. */
   issue?: JiraIssue;
+  /** Every workspace ticket that loaded, by key, for the per-repository view. */
+  issues: Record<string, JiraIssue>;
   errors: LocatedIssue[];
   designs: DesignFrame[];
   /** Everything assigned to the user — independent of the current branch. */
@@ -65,7 +68,8 @@ export class Hub implements vscode.Disposable {
   private refreshingGitHub = false;
 
   private snapshot: HubSnapshot = {
-    context: { changedFiles: [], pinned: false, repos: [] },
+    context: { changedFiles: [], pinned: false, repos: [], work: [] },
+    issues: {},
     errors: [],
     designs: [],
     tasks: [],
@@ -175,9 +179,16 @@ export class Hub implements vscode.Disposable {
       return;
     }
 
+    // Keep the last good set on failure rather than blanking the view.
+    const issues =
+      jira.status === 'fulfilled'
+        ? Object.fromEntries(jira.value.map((issue) => [issue.key, issue]))
+        : this.snapshot.issues;
+
     this.snapshot = {
       context: ctx,
-      issue: jira.status === 'fulfilled' ? jira.value[0] : this.snapshot.issue,
+      issues,
+      issue: ctx.ticketKey ? issues[ctx.ticketKey] : undefined,
       errors: sentry.status === 'fulfilled' ? sentry.value : [],
       designs: figma.status === 'fulfilled' ? figma.value : [],
       // Keep the last good list on failure rather than blanking the view; the

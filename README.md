@@ -43,6 +43,27 @@ Clearing asks for confirmation, then offers to reconnect straight away. Where a 
 
 If none match, the sidebar shows a welcome screen with a pin button and **Start work on issue…**, which picks from your Jira queue and creates a correctly named branch.
 
+### More than one repository
+
+A multi-root workspace has no single answer to "what am I working on" — the frontend can sit on one ticket's branch while the backend sits on another. So **Current work** resolves every repository in the workspace independently and shows a group per repository that has a ticket:
+
+```
+● evulpo-frontend      fix/ACME-2407-dashboard-checkin-height
+    ACME-2407  Dashboard check-in height
+    In Progress
+○ evulpo-backend       fix/ACME-2405-lesson-chapter-no-levels-500
+    ACME-2405  Lesson chapter 500
+    In Review
+```
+
+The filled bullet is the repository the active editor is in — the one the status bar, the error list and the designs panel are talking about, since those still follow the active repository.
+
+Repositories with no ticket on their branch aren't listed; they have no current work. With a single ticket in the active repository the view stays flat, because a lone group header is pure indentation. A single ticket in some *other* repository is still grouped, so it never looks like it belongs to the branch you're on.
+
+Ticket keys are deduplicated before fetching, so a frontend and a backend on branches for the same ticket costs one request, and each key is cached separately.
+
+Rows act on their own ticket: opening or transitioning a row under `evulpo-backend` uses that repository's ticket, not the active one.
+
 ## My tasks
 
 Everything assigned to you, independent of the branch you're on. Each row shows the status and how long ago it changed; the icon is the priority — a red chevron up for the urgent end of your Jira priority scheme, a blue chevron down for the quiet end. Click a row to open it in Jira, expand it for its subtasks, right-click for **Change ticket status…**.

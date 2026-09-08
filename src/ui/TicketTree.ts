@@ -2,8 +2,10 @@ import * as vscode from 'vscode';
 import type { Hub, HubSnapshot } from '../providers/Hub';
 import type { JiraIssue } from '../providers/jira/JiraClient';
 import type { ProviderStatus } from '../providers/Provider';
+import { withTickets, type RepoWork } from '../context/repoWork';
 
 type Node =
+  | { kind: 'repo'; work: RepoWork; children: Node[] }
   | { kind: 'issue'; issue: JiraIssue }
   | { kind: 'status'; issue: JiraIssue }
   | { kind: 'group'; label: string; icon: string; children: Node[] }
@@ -74,7 +76,11 @@ export class TicketTree implements vscode.TreeDataProvider<Node>, vscode.Disposa
         item.tooltip = new vscode.MarkdownString(
           `**${node.issue.key}** — ${node.issue.summary}\n\n${node.issue.description.slice(0, 1200)}`
         );
-        item.command = { command: 'devhub.openTicket', title: 'Open ticket in browser' };
+        item.command = {
+          command: 'devhub.openTicket',
+          title: 'Open ticket in browser',
+          arguments: [node]
+        };
         return item;
       }
       case 'status': {
@@ -88,7 +94,28 @@ export class TicketTree implements vscode.TreeDataProvider<Node>, vscode.Disposa
         );
         item.description = node.issue.assignee ?? 'Unassigned';
         item.tooltip = 'Change status';
-        item.command = { command: 'devhub.transitionIssue', title: 'Change ticket status' };
+        item.command = {
+          command: 'devhub.transitionIssue',
+          title: 'Change ticket status',
+          arguments: [node]
+        };
+        return item;
+      }
+      case 'repo': {
+        const { work } = node;
+        const item = new vscode.TreeItem(work.name, vscode.TreeItemCollapsibleState.Expanded);
+        // Filled for the repository the active editor is in, so it is obvious
+        // which one the status bar and the error list are talking about.
+        item.iconPath = new vscode.ThemeIcon(work.active ? 'circle-filled' : 'repo');
+        item.description = [work.branch, work.pinned ? 'pinned' : undefined]
+          .filter(Boolean)
+          .join(' · ');
+        item.tooltip = new vscode.MarkdownString(
+          `**${work.name}**\n\n${work.branch ?? 'no branch'}${
+            work.active ? '\n\nActive repository' : ''
+          }`
+        );
+        item.contextValue = 'devhub.repo';
         return item;
       }
       case 'group': {
@@ -133,13 +160,29 @@ export class TicketTree implements vscode.TreeDataProvider<Node>, vscode.Disposa
 
   getChildren(node?: Node): Node[] {
     if (node) {
-      return node.kind === 'group' ? node.children : [];
+      return node.kind === 'group' || node.kind === 'repo' ? node.children : [];
     }
 
-    const { context, issue, loading, jiraStatus } = this.snapshot;
+    const { context, loading, jiraStatus } = this.snapshot;
     const broken = isBroken(jiraStatus);
 
-    if (!context.ticketKey) {
+    const working = withTickets(context.work);
+
+    // Flat only when the one ticket in play belongs to the repository the user
+    // is looking at. Anything else needs a header saying which repo it is —
+    // including a single ticket in a repository that isn't the active one,
+    // which would otherwise be hidden behind the "no ticket" welcome screen.
+    const flat = working.length === 1 && working[0].active;
+
+    if (working.length > 0 && !flat) {
+      return working.map((work) => ({
+        kind: 'repo',
+        work,
+        children: this.nodesFor(work.ticketKey as string, loading, broken, jiraStatus)
+      }));
+    }
+
+    if (working.length === 0) {
       if (broken && !loading) {
         // Returning a node suppresses viewsWelcome, which would otherwise claim
         // there is simply no ticket for this branch.
@@ -149,11 +192,21 @@ export class TicketTree implements vscode.TreeDataProvider<Node>, vscode.Disposa
       return [];
     }
 
+    return this.nodesFor(working[0].ticketKey as string, loading, broken, jiraStatus);
+  }
+
+  /** The rows for one ticket: the issue itself and everything hanging off it. */
+  private nodesFor(
+    key: string,
+    loading: boolean,
+    broken: boolean,
+    jiraStatus: ProviderStatus
+  ): Node[] {
+    const issue = this.snapshot.issues[key];
+
     if (!issue) {
       if (loading) {
-        return [
-          { kind: 'message', label: `Loading ${context.ticketKey}…`, icon: 'sync~spin' }
-        ];
+        return [{ kind: 'message', label: `Loading ${key}…`, icon: 'sync~spin' }];
       }
       if (broken) {
         return [this.failureNode(jiraStatus)];
@@ -161,9 +214,9 @@ export class TicketTree implements vscode.TreeDataProvider<Node>, vscode.Disposa
       return [
         {
           kind: 'message',
-          label: `${context.ticketKey} not found in Jira`,
+          label: `${key} not found in Jira`,
           icon: 'question',
-          tooltip: `Jira is reachable, but ${context.ticketKey} did not come back. Check the key exists and that you can see it.`
+          tooltip: `Jira is reachable, but ${key} did not come back. Check the key exists and that you can see it.`
         }
       ];
     }

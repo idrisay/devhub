@@ -1,8 +1,14 @@
+import * as path from 'path';
 import * as vscode from 'vscode';
 import { config } from '../infra/Config';
 import { log } from '../infra/Logger';
 import { hostFor } from '../providers/github/endpoints';
 import { dedupeRepos, parseGitHubRemote, repoSlug, type RepoRef } from '../providers/github/remoteUrl';
+import {
+  repoWorkFingerprint,
+  sortRepoWork,
+  type RepoWork
+} from './repoWork';
 import { findTicketKey } from './ticketKeyResolver';
 
 /** The single source of truth every view subscribes to. */
@@ -21,6 +27,13 @@ export interface WorkContext {
    * folders they actually have open, not across their whole account.
    */
   repos: RepoRef[];
+  /**
+   * Per-repository branch and ticket. The scalar `ticketKey`, `branch`,
+   * `repoRoot` and `pinned` above are this list's active entry, kept so that
+   * everything keyed off "the" current ticket — the status bar, Sentry, Figma —
+   * keeps working unchanged.
+   */
+  work: RepoWork[];
 }
 
 const PIN_KEY = 'devhub.pins';
@@ -73,7 +86,7 @@ export class WorkContextService implements vscode.Disposable {
   private git?: GitAPI;
   private timer?: NodeJS.Timeout;
 
-  private current: WorkContext = { changedFiles: [], pinned: false, repos: [] };
+  private current: WorkContext = { changedFiles: [], pinned: false, repos: [], work: [] };
 
   constructor(private readonly memento: vscode.Memento) {}
 
@@ -138,7 +151,11 @@ export class WorkContextService implements vscode.Disposable {
    * ticket is sticky until you notice and unpin it.
    */
   private pinKeyFor(branch: string | undefined): string {
-    return `${this.activeRepository?.rootUri.fsPath ?? ''}#${branch ?? DETACHED}`;
+    return this.pinKeyForRoot(this.activeRepository?.rootUri.fsPath ?? '', branch);
+  }
+
+  private pinKeyForRoot(root: string, branch: string | undefined): string {
+    return `${root}#${branch ?? DETACHED}`;
   }
 
   private pins(): Pins {
@@ -186,31 +203,18 @@ export class WorkContextService implements vscode.Disposable {
 
   private async recompute(): Promise<void> {
     const repo = this.activeRepository;
-    const branch = repo?.state.HEAD?.name;
-    const pinnedKey = this.pins()[this.pinKeyFor(branch)];
-
-    // Resolution order: pin wins, then branch name, then the last commit message.
-    let ticketKey: string | undefined = pinnedKey;
-    if (!ticketKey) {
-      ticketKey = findTicketKey(branch);
-    }
-    if (!ticketKey && repo?.state.HEAD?.commit) {
-      try {
-        const commit = await repo.getCommit(repo.state.HEAD.commit);
-        ticketKey = findTicketKey(commit.message);
-      } catch {
-        // Shallow clone or detached HEAD — not worth surfacing.
-      }
-    }
+    const work = await this.collectWork(repo);
+    const active = work.find((entry) => entry.active);
 
     const next: WorkContext = {
-      ticketKey,
-      branch,
+      ticketKey: active?.ticketKey,
+      branch: active?.branch,
       repoRoot: repo?.rootUri.fsPath,
       changedFiles: await this.collectChangedFiles(repo),
-      pinned: Boolean(pinnedKey),
+      pinned: Boolean(active?.pinned),
       githubRepo: this.detectGitHub(repo),
-      repos: this.workspaceRepos()
+      repos: this.workspaceRepos(),
+      work
     };
 
     const changed =
@@ -219,7 +223,8 @@ export class WorkContextService implements vscode.Disposable {
       next.repoRoot !== this.current.repoRoot ||
       next.pinned !== this.current.pinned ||
       next.changedFiles.join('|') !== this.current.changedFiles.join('|') ||
-      this.repoList(next.repos) !== this.repoList(this.current.repos);
+      this.repoList(next.repos) !== this.repoList(this.current.repos) ||
+      repoWorkFingerprint(next.work) !== repoWorkFingerprint(this.current.work);
 
     this.current = next;
     await vscode.commands.executeCommand('setContext', 'devhub.pinned', next.pinned);
@@ -229,6 +234,60 @@ export class WorkContextService implements vscode.Disposable {
       log.info(`Work context: ${next.ticketKey ?? 'no ticket'} on ${next.branch ?? 'no branch'}`);
       this._onDidChange.fire(next);
     }
+  }
+
+  /**
+   * One entry per repository in the workspace, each resolved independently.
+   *
+   * Resolution order per repository: its own pin, then its branch name, then
+   * its last commit message. `getCommit` is a local read, so doing it for every
+   * repository rather than only the active one costs no network.
+   */
+  private async collectWork(activeRepo: GitRepository | undefined): Promise<RepoWork[]> {
+    const activeRoot = activeRepo?.rootUri.fsPath;
+    const pins = this.pins();
+
+    // With no Git extension there are no repositories to iterate, but a pin is
+    // exactly the escape hatch for that case and must still resolve.
+    const repositories = this.git?.repositories ?? [];
+    if (repositories.length === 0) {
+      const pinned = pins[this.pinKeyForRoot('', undefined)];
+      return pinned
+        ? [{ root: '', name: 'Pinned', ticketKey: pinned, pinned: true, active: true }]
+        : [];
+    }
+
+    const entries = await Promise.all(
+      repositories.map(async (repo): Promise<RepoWork> => {
+        const root = repo.rootUri.fsPath;
+        const branch = repo.state.HEAD?.name;
+        const pinnedKey = pins[this.pinKeyForRoot(root, branch)];
+
+        let ticketKey: string | undefined = pinnedKey;
+        if (!ticketKey) {
+          ticketKey = findTicketKey(branch);
+        }
+        if (!ticketKey && repo.state.HEAD?.commit) {
+          try {
+            const commit = await repo.getCommit(repo.state.HEAD.commit);
+            ticketKey = findTicketKey(commit.message);
+          } catch {
+            // Shallow clone or detached HEAD — not worth surfacing.
+          }
+        }
+
+        return {
+          root,
+          name: path.basename(root),
+          branch,
+          ticketKey,
+          pinned: Boolean(pinnedKey),
+          active: root === activeRoot
+        };
+      })
+    );
+
+    return sortRepoWork(entries);
   }
 
   /** `origin` if there is one, otherwise whatever remote the repo does have. */

@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { ticketKeysOf } from '../../context/repoWork';
 import type { WorkContext } from '../../context/WorkContextService';
 import type { AuthManager } from '../../infra/AuthManager';
 import type { CacheStore } from '../../infra/CacheStore';
@@ -58,15 +59,31 @@ export class JiraProvider implements Provider<JiraIssue> {
     return new JiraClient(config.jira.baseUrl(), config.jira.email(), token);
   }
 
+  /**
+   * The issue for every repository in the workspace that has one.
+   *
+   * Keys are deduplicated first: a frontend and a backend on branches for the
+   * same ticket is the normal case, and it should cost one fetch. Each key is
+   * cached separately, so adding a repository on a branch you already had open
+   * costs nothing.
+   */
   async forContext(ctx: WorkContext, token: vscode.CancellationToken): Promise<JiraIssue[]> {
-    if (!ctx.ticketKey) {
+    const keys = ticketKeysOf(ctx.work);
+    if (ctx.ticketKey && !keys.includes(ctx.ticketKey)) {
+      keys.unshift(ctx.ticketKey);
+    }
+
+    if (keys.length === 0) {
       // Nothing to fetch, but a stored token that no longer works should still
       // show up in the sidebar rather than looking like an ordinary branch.
       await this.probe(token);
       return [];
     }
-    const issue = await this.getIssue(ctx.ticketKey, token);
-    return issue ? [issue] : [];
+
+    const results = await Promise.allSettled(keys.map((key) => this.getIssue(key, token)));
+    return results.flatMap((result) =>
+      result.status === 'fulfilled' && result.value ? [result.value] : []
+    );
   }
 
   async getIssue(key: string, token?: vscode.CancellationToken): Promise<JiraIssue | undefined> {
