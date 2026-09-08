@@ -142,19 +142,19 @@
         "command": "devhub.copyBranchName",
         "title": "Copy branch name for ticket",
         "category": "DevHub",
-        "icon": "$(clippy)"
+        "icon": "$(copy)"
       },
       {
         "command": "devhub.tasks.copyPrompt",
         "title": "Copy prompt for task",
         "category": "DevHub",
-        "icon": "$(clippy)"
+        "icon": "$(copy)"
       },
       {
         "command": "devhub.pullRequests.copyReviewPrompt",
         "title": "Copy review prompt for pull request",
         "category": "DevHub",
-        "icon": "$(clippy)"
+        "icon": "$(copy)"
       },
       {
         "command": "devhub.diagnosePathMapping",

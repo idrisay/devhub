@@ -461,7 +461,7 @@ export function registerCommands(deps: Deps): vscode.Disposable[] {
     actions.push(
       { label: '$(rocket) Start work on issue…', command: 'devhub.startWork' },
       { label: '$(pin) Pin a ticket…', command: 'devhub.pinTicket' },
-      { label: '$(clippy) Copy branch name', command: 'devhub.copyBranchName' }
+      { label: '$(copy) Copy branch name', command: 'devhub.copyBranchName' }
     );
     if (context.pinned) {
       actions.push({ label: '$(pinned) Unpin ticket', command: 'devhub.unpinTicket' });
