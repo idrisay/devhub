@@ -10,7 +10,8 @@ import {
   priorityRank,
   priorityTier,
   sortTasks,
-  statusFacets
+  statusFacets,
+  taskRowLabel
 } from '../src/providers/jira/taskSort';
 import { findInProgressTransition } from '../src/providers/jira/transitions';
 import {
@@ -501,6 +502,15 @@ check('fingerprint is stable', repoWorkFingerprint([web, api]) === repoWorkFinge
 check('fingerprint notices a branch change', repoWorkFingerprint([web]) === repoWorkFingerprint([work({ ...web, branch: 'other' })]), false);
 check('fingerprint notices a new ticket', repoWorkFingerprint([infra]) === repoWorkFingerprint([work({ ...infra, ticketKey: 'ACME-9' })]), false);
 check('fingerprint notices the active repo moving', repoWorkFingerprint([web]) === repoWorkFingerprint([work({ ...web, active: true })]), false);
+
+console.log('task row label');
+check('key, status, then summary', taskRowLabel({ key: 'ACME-2393', status: 'In Review', summary: 'Dashboard check-in height' }),
+  'ACME-2393 · In Review · Dashboard check-in height');
+// The status must survive truncation, so it goes before the long field.
+check('status precedes a long summary', taskRowLabel({ key: 'ACME-1', status: 'In Progress', summary: 'x'.repeat(200) }).startsWith('ACME-1 · In Progress · '), true);
+check('missing status is not a stray separator', taskRowLabel({ key: 'ACME-1', status: '', summary: 'Fix login' }), 'ACME-1 · Fix login');
+check('whitespace status is dropped', taskRowLabel({ key: 'ACME-1', status: '   ', summary: 'Fix login' }), 'ACME-1 · Fix login');
+check('status is trimmed', taskRowLabel({ key: 'ACME-1', status: '  In Review  ', summary: 'Fix login' }), 'ACME-1 · In Review · Fix login');
 
 console.log(failures === 0 ? '\nAll checks passed.' : `\n${failures} check(s) failed.`);
 process.exit(failures === 0 ? 0 : 1);

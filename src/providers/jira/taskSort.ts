@@ -11,6 +11,18 @@ export const TASK_SORTS: { key: TaskSort; label: string; description: string; sh
   { key: 'key', label: 'Issue key', description: 'PROJ-2 before PROJ-10', short: 'Key' }
 ];
 
+/**
+ * The text of a task row: key, status, then summary.
+ *
+ * The status used to sit in the row's `description`, which VS Code renders
+ * after the label — so any task with a long summary pushed its own status out
+ * of view, which is the one field you want to scan. Truncation eats the end of
+ * the label, so anything that must survive it goes in front of the summary.
+ */
+export function taskRowLabel(issue: Pick<JiraIssue, 'key' | 'status' | 'summary'>): string {
+  return [issue.key, issue.status?.trim(), issue.summary].filter(Boolean).join(' · ');
+}
+
 /** Terse form for the view header, where there is only room for a word. */
 export function sortShortLabel(sort: TaskSort): string {
   return TASK_SORTS.find((s) => s.key === sort)?.short ?? sort;

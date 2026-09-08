@@ -66,7 +66,9 @@ Rows act on their own ticket: opening or transitioning a row under `acme-api` us
 
 ## My tasks
 
-Everything assigned to you, independent of the branch you're on. Each row shows the status and how long ago it changed; the icon is the priority — a red chevron up for the urgent end of your Jira priority scheme, a blue chevron down for the quiet end. Click a row to open it in Jira, expand it for its subtasks, right-click for **Change ticket status…**.
+Everything assigned to you, independent of the branch you're on. Each row reads `KEY · Status · Summary`, with how long ago it changed on the right; the icon is the priority — a red chevron up for the urgent end of your Jira priority scheme, a blue chevron down for the quiet end. Click a row to open it in Jira, expand it for its subtasks, right-click for **Change ticket status…**.
+
+The status sits in front of the summary rather than after it, because a row is truncated from the end — with the status on the right, any task with a long summary hid its own status, which is the field you most want to scan.
 
 Two controls in the view header:
 

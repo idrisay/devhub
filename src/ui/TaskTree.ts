@@ -10,6 +10,7 @@ import {
   sortShortLabel,
   sortTasks,
   statusFacets,
+  taskRowLabel,
   TASK_SORTS,
   type PriorityTier,
   type TaskSort
@@ -180,7 +181,7 @@ export class TaskTree implements vscode.TreeDataProvider<Node>, vscode.Disposabl
       case 'task': {
         const { issue } = node;
         const item = new vscode.TreeItem(
-          `${issue.key}  ${issue.summary}`,
+          taskRowLabel(issue),
           issue.subtasks.length > 0
             ? vscode.TreeItemCollapsibleState.Collapsed
             : vscode.TreeItemCollapsibleState.None
@@ -194,8 +195,9 @@ export class TaskTree implements vscode.TreeDataProvider<Node>, vscode.Disposabl
           icon.color ? new vscode.ThemeColor(icon.color) : undefined
         );
 
+        // Status has moved into the label, so the description is just recency.
         const updated = relativeTime(issue.updated);
-        item.description = [issue.status, updated].filter(Boolean).join(' · ');
+        item.description = updated;
         item.contextValue = 'devhub.task';
 
         const tooltip = new vscode.MarkdownString('', true);
