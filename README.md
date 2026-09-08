@@ -48,10 +48,10 @@ If none match, the sidebar shows a welcome screen with a pin button and **Start 
 A multi-root workspace has no single answer to "what am I working on" — the frontend can sit on one ticket's branch while the backend sits on another. So **Current work** resolves every repository in the workspace independently and shows a group per repository that has a ticket:
 
 ```
-● evulpo-frontend      fix/ACME-2407-dashboard-checkin-height
+● acme-web      fix/ACME-2407-dashboard-checkin-height
     ACME-2407  Dashboard check-in height
     In Progress
-○ evulpo-backend       fix/ACME-2405-lesson-chapter-no-levels-500
+○ acme-api       fix/ACME-2405-lesson-chapter-no-levels-500
     ACME-2405  Lesson chapter 500
     In Review
 ```
@@ -62,7 +62,7 @@ Repositories with no ticket on their branch aren't listed; they have no current 
 
 Ticket keys are deduplicated before fetching, so a frontend and a backend on branches for the same ticket costs one request, and each key is cached separately.
 
-Rows act on their own ticket: opening or transitioning a row under `evulpo-backend` uses that repository's ticket, not the active one.
+Rows act on their own ticket: opening or transitioning a row under `acme-api` uses that repository's ticket, not the active one.
 
 ## My tasks
 
