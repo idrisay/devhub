@@ -5,6 +5,13 @@ import { AuthManager, ProviderId, TokenValidator } from './infra/AuthManager';
 import type { CacheStore } from './infra/CacheStore';
 import { config } from './infra/Config';
 import { log } from './infra/Logger';
+import {
+  isCustomised,
+  promptActions,
+  scopeFor,
+  type PromptSettingId,
+  type SettingScope
+} from './infra/promptSettings';
 import type { Hub } from './providers/Hub';
 import type { JiraIssue } from './providers/jira/JiraClient';
 import type { PullSummary } from './providers/github/pullStatus';
@@ -24,6 +31,12 @@ interface Deps {
   taskTree: TaskTree;
   pullRequestTree: PullRequestTree;
 }
+
+const CONFIG_TARGETS: Record<SettingScope, vscode.ConfigurationTarget> = {
+  workspaceFolder: vscode.ConfigurationTarget.WorkspaceFolder,
+  workspace: vscode.ConfigurationTarget.Workspace,
+  global: vscode.ConfigurationTarget.Global
+};
 
 /**
  * Commands invoked from a tree row arrive with the node as their argument;
@@ -443,6 +456,75 @@ export function registerCommands(deps: Deps): vscode.Disposable[] {
     );
   };
 
+  /**
+   * Opens one of the copy-button prompts for editing.
+   *
+   * Both settings default to empty meaning "use the built-in text", so the
+   * Settings UI would otherwise open on a blank box and changing one sentence
+   * would mean retyping the whole prompt. Writing the text that is actually in
+   * use into the setting first turns that into an edit, and the reset entries
+   * put the built-in default back.
+   */
+  const editCopyPrompt = async () => {
+    const section = () => vscode.workspace.getConfiguration('devhub');
+    const raw: Record<PromptSettingId, string> = {
+      tasks: section().get<string>('tasks.promptTemplate', ''),
+      review: section().get<string>('github.reviewPromptTemplate', '')
+    };
+
+    const picked = await vscode.window.showQuickPick(
+      promptActions(raw).map((action) => ({ ...action, alwaysShow: true })),
+      { placeHolder: 'Which copy button?', matchOnDetail: true }
+    );
+    if (!picked) {
+      return;
+    }
+
+    const { setting, action } = picked;
+    const target = CONFIG_TARGETS[scopeFor(section().inspect<string>(setting.key))];
+
+    if (action === 'reset') {
+      try {
+        await section().update(setting.key, undefined, target);
+      } catch (error) {
+        log.error(`could not reset ${setting.setting}`, error);
+        void vscode.window.showErrorMessage(`DevHub: could not reset ${setting.setting}.`);
+        return;
+      }
+      void vscode.window.showInformationMessage(
+        `DevHub: ${setting.view} is back to the built-in prompt.`
+      );
+      return;
+    }
+
+    // An existing override is already the text the box will show, so only an
+    // untouched setting needs seeding.
+    let seeded = false;
+    if (!isCustomised(raw[setting.id])) {
+      const effective =
+        setting.id === 'tasks'
+          ? config.tasks.promptTemplate()
+          : config.github.reviewPromptTemplate();
+      try {
+        await section().update(setting.key, effective, target);
+        seeded = true;
+      } catch (error) {
+        // The box will open blank, so say so rather than claiming otherwise.
+        log.error(`could not seed ${setting.setting}`, error);
+        void vscode.window.showWarningMessage(
+          `DevHub: could not fill ${setting.setting} in, so it will open empty.`
+        );
+      }
+    }
+
+    await vscode.commands.executeCommand('workbench.action.openSettings', setting.setting);
+    if (seeded) {
+      void vscode.window.showInformationMessage(
+        `DevHub: filled ${setting.view} in with the prompt in use — edit it in place, or run this command again to reset it.`
+      );
+    }
+  };
+
   const showActions = async () => {
     const { context, issue } = hub.current;
     const actions: { label: string; command: string; description?: string }[] = [];
@@ -482,6 +564,7 @@ export function registerCommands(deps: Deps): vscode.Disposable[] {
     actions.push(
       { label: '$(refresh) Refresh', command: 'devhub.refresh' },
       { label: '$(plug) Connect a service…', command: 'devhub.signIn' },
+      { label: '$(edit) Edit copy prompt…', command: 'devhub.editCopyPrompt' },
       { label: '$(output) Show logs', command: 'devhub.showLogs' }
     );
 
@@ -524,6 +607,7 @@ export function registerCommands(deps: Deps): vscode.Disposable[] {
     vscode.commands.registerCommand('devhub.copyBranchName', copyBranchName),
     vscode.commands.registerCommand('devhub.tasks.copyPrompt', copyTaskPrompt),
     vscode.commands.registerCommand('devhub.pullRequests.copyReviewPrompt', copyReviewPrompt),
+    vscode.commands.registerCommand('devhub.editCopyPrompt', editCopyPrompt),
     vscode.commands.registerCommand('devhub.diagnosePathMapping', diagnosePathMapping),
     vscode.commands.registerCommand('devhub.showLogs', () => log.show()),
     vscode.commands.registerCommand('devhub.clearCache', async () => {

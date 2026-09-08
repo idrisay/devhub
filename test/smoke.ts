@@ -15,6 +15,14 @@ import {
 } from '../src/providers/jira/taskSort';
 import { findInProgressTransition } from '../src/providers/jira/transitions';
 import {
+  describePromptSetting,
+  isCustomised,
+  placeholderHint,
+  promptActions,
+  PROMPT_SETTINGS,
+  scopeFor
+} from '../src/infra/promptSettings';
+import {
   repoWorkFingerprint,
   sortRepoWork,
   ticketKeysOf,
@@ -511,6 +519,41 @@ check('status precedes a long summary', taskRowLabel({ key: 'ACME-1', status: 'I
 check('missing status is not a stray separator', taskRowLabel({ key: 'ACME-1', status: '', summary: 'Fix login' }), 'ACME-1 · Fix login');
 check('whitespace status is dropped', taskRowLabel({ key: 'ACME-1', status: '   ', summary: 'Fix login' }), 'ACME-1 · Fix login');
 check('status is trimmed', taskRowLabel({ key: 'ACME-1', status: '  In Review  ', summary: 'Fix login' }), 'ACME-1 · In Review · Fix login');
+
+console.log('copy prompt settings');
+check('one entry per copy button', PROMPT_SETTINGS.map((s) => s.setting),
+  ['devhub.tasks.promptTemplate', 'devhub.github.reviewPromptTemplate']);
+// The key Config reads must be the setting id minus the section, or seeding
+// would write somewhere the extension never looks.
+check('keys match the setting ids', PROMPT_SETTINGS.every((s) => `devhub.${s.key}` === s.setting), true);
+check('placeholders read as they are typed', placeholderHint(PROMPT_SETTINGS[0]),
+  '${url} ${key} ${summary} ${type} ${status}');
+
+check('empty is the built-in text', isCustomised(''), false);
+check('unset is the built-in text', isCustomised(undefined), false);
+// Config trims before deciding, so whitespace must not count here either.
+check('whitespace is the built-in text', isCustomised('   \n  '), false);
+check('text is an override', isCustomised('Review ${url}'), true);
+check('describes an untouched setting', describePromptSetting(''), 'Built-in default');
+check('describes an override', describePromptSetting('hello'), 'Customised');
+
+check('nothing to reset when untouched', promptActions({ tasks: '', review: '' }).map((a) => a.action),
+  ['edit', 'edit']);
+check('a reset appears once overridden', promptActions({ tasks: 'mine', review: '' }).map((a) => a.action),
+  ['edit', 'edit', 'reset']);
+check('the reset targets the overridden prompt', promptActions({ tasks: '', review: 'mine' })[2].setting.id, 'review');
+check('resets come after both edits', promptActions({ tasks: 'a', review: 'b' }).map((a) => a.action),
+  ['edit', 'edit', 'reset', 'reset']);
+check('the state is on the entry', promptActions({ tasks: 'mine', review: '' })[0].description, 'Customised');
+
+check('an untouched setting goes to user settings', scopeFor(undefined), 'global');
+check('no override goes to user settings', scopeFor({}), 'global');
+// An override is edited where it lives, so seeding never promotes a
+// workspace value into a user-wide one.
+check('a workspace value stays in the workspace', scopeFor({ workspaceValue: 'mine' }), 'workspace');
+check('a folder value stays in the folder', scopeFor({ workspaceFolderValue: 'mine' }), 'workspaceFolder');
+check('the narrowest scope wins', scopeFor({ workspaceValue: 'a', workspaceFolderValue: 'b' }), 'workspaceFolder');
+check('an empty override still counts as present', scopeFor({ workspaceValue: '' }), 'workspace');
 
 console.log(failures === 0 ? '\nAll checks passed.' : `\n${failures} check(s) failed.`);
 process.exit(failures === 0 ? 0 : 1);

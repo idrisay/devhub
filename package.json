@@ -157,6 +157,12 @@
         "icon": "$(copy)"
       },
       {
+        "command": "devhub.editCopyPrompt",
+        "title": "Edit copy prompt\u2026",
+        "category": "DevHub",
+        "icon": "$(edit)"
+      },
+      {
         "command": "devhub.diagnosePathMapping",
         "title": "Diagnose Sentry path mapping\u2026",
         "category": "DevHub"
@@ -342,7 +348,7 @@
           "type": "string",
           "default": "",
           "editPresentation": "multilineText",
-          "markdownDescription": "Text copied by the clipboard button on a row in **My tasks**. Placeholders: `${url}`, `${key}`, `${summary}`, `${type}`, `${status}`. Leave empty to use the built-in two-stage investigate-then-implement prompt."
+          "markdownDescription": "Text copied by the clipboard button on a row in **My tasks**. Placeholders: `${url}`, `${key}`, `${summary}`, `${type}`, `${status}`. Leave empty to use the built-in two-stage investigate-then-implement prompt. Run **DevHub: Edit copy prompt\u2026** to open this filled in with the prompt in use, rather than editing it from blank."
         },
         "devhub.sentry.baseUrl": {
           "type": "string",
@@ -424,7 +430,7 @@
           "type": "string",
           "default": "",
           "editPresentation": "multilineText",
-          "markdownDescription": "Text copied by the clipboard button on a row in **Awaiting my review**. Placeholders: `${url}`, `${repo}`, `${number}`, `${title}`, `${author}`, `${key}` (the ticket key found in the pull request title, empty if there is none). Leave empty to use the built-in review prompt."
+          "markdownDescription": "Text copied by the clipboard button on a row in **Awaiting my review**. Placeholders: `${url}`, `${repo}`, `${number}`, `${title}`, `${author}`, `${key}` (the ticket key found in the pull request title, empty if there is none). Leave empty to use the built-in review prompt. Run **DevHub: Edit copy prompt\u2026** to open this filled in with the prompt in use, rather than editing it from blank."
         },
         "devhub.statusBar.enabled": {
           "type": "boolean",

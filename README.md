@@ -105,6 +105,8 @@ Override it with `devhub.tasks.promptTemplate`:
 
 `${url}`, `${key}`, `${summary}`, `${type}` and `${status}` are filled in from the row. An unrecognised placeholder is left as written, so a typo shows up in the pasted text rather than silently deleting a line. Leave the setting empty for the built-in default.
 
+Because both prompt settings default to empty, the Settings UI opens them on a blank box, and changing one sentence would mean retyping the whole prompt. **DevHub: Edit copy prompt…** avoids that: pick a button and it writes the prompt currently in use into the setting, then opens it — so you edit rather than rewrite. Once a prompt is overridden the same command offers to reset it back to the built-in text. An override already in workspace settings is edited where it lives rather than being promoted to a user-wide one.
+
 The same command works from the palette as **DevHub: Copy prompt for task**, where it uses the current branch's ticket.
 
 ## Pull requests
@@ -163,6 +165,8 @@ Override it with `devhub.github.reviewPromptTemplate`:
 ```
 
 `${url}`, `${repo}`, `${number}`, `${title}`, `${author}` and `${key}` are filled in from the row. `${key}` is the ticket key found in the pull request title, falling back to the current branch's; it renders empty when there is none, whereas an unrecognised placeholder is left as written. Leave the setting empty for the built-in default.
+
+**DevHub: Edit copy prompt…** opens this one filled in as well.
 
 The button is on the review queue only — your own pull requests don't get it — and it needs a row, so it isn't offered in the command palette.
 
