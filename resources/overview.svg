@@ -1,0 +1,189 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1000" width="1600" height="1000" role="img" aria-labelledby="title desc">
+  <title id="title">DevHub: branch-driven developer context in VS Code</title>
+  <desc id="desc">A visual overview of how DevHub resolves a ticket from the active Git branch, fetches Jira, GitHub, Figma and Sentry context, and renders it across VS Code surfaces.</desc>
+  <style>
+    .bg { fill: #f6f7f5; }
+    .ink { fill: #20302f; }
+    .muted { fill: #5d6d6b; }
+    .tiny { font: 12px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    .small { font: 13px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    .body { font: 14px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    .label { font: 600 14px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; letter-spacing: .2px; }
+    .title { font: 700 27px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    .section { font: 700 16px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; letter-spacing: .5px; }
+    .card { fill: #ffffff; stroke: #d6dfdc; stroke-width: 1.2; }
+    .dark-card { fill: #253a38; }
+    .jira { fill: #e9f0eb; stroke: #9eb8aa; stroke-width: 1.2; }
+    .github { fill: #ebeff2; stroke: #aebdc5; stroke-width: 1.2; }
+    .figma { fill: #f3ece5; stroke: #c8b29d; stroke-width: 1.2; }
+    .sentry { fill: #f2eaf0; stroke: #c7afc2; stroke-width: 1.2; }
+    .line { stroke: #849693; stroke-width: 1.5; fill: none; }
+    .dash { stroke: #a6b3b0; stroke-width: 1.2; stroke-dasharray: 4 5; fill: none; }
+    .accent { fill: #d7a96b; }
+    .teal { fill: #4e827b; }
+    .green { fill: #6d9580; }
+    .plum { fill: #8b667d; }
+    .bluegrey { fill: #6e8795; }
+  </style>
+  <defs>
+    <marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 Z" fill="#849693"/></marker>
+    <marker id="arrowSoft" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 Z" fill="#a6b3b0"/></marker>
+  </defs>
+
+  <rect class="bg" width="1600" height="1000"/>
+  <rect x="0" y="0" width="1600" height="86" fill="#20302f"/>
+  <circle cx="57" cy="42" r="17" class="accent"/>
+  <path d="M49 42h16M57 34v16" stroke="#20302f" stroke-width="3" stroke-linecap="round"/>
+  <text x="88" y="42" class="title" fill="#f7f5ef">DevHub</text>
+  <text x="88" y="65" class="body" fill="#cbd9d4">The current Git branch becomes the developer context inside VS Code.</text>
+  <text x="1546" y="51" text-anchor="end" class="small" fill="#cbd9d4">Jira · GitHub · Figma · Sentry</text>
+
+  <!-- Branch-led context -->
+  <text x="50" y="116" class="section ink">1. THE BRANCH IS THE SWITCHBOARD</text>
+  <rect x="50" y="132" width="286" height="132" rx="10" class="card"/>
+  <rect x="50" y="132" width="7" height="132" rx="3" class="teal"/>
+  <text x="76" y="160" class="label ink">Built-in Git extension</text>
+  <text x="76" y="185" class="body muted">active editor → active repository</text>
+  <text x="76" y="208" class="body ink">branch: feature/PROJ-1234-login</text>
+  <text x="76" y="231" class="small muted"><tspan x="76" y="231">also gathers changed files</tspan><tspan x="76" y="249">&amp; GitHub remotes</tspan></text>
+  <path d="M336 198 H380" class="line" marker-end="url(#arrow)"/>
+
+  <rect x="390" y="132" width="456" height="132" rx="10" class="dark-card"/>
+  <text x="416" y="160" class="label" fill="#f7f5ef">Ticket key resolution — per repository</text>
+  <rect x="416" y="177" width="123" height="54" rx="6" fill="#3a5551"/>
+  <text x="477" y="199" text-anchor="middle" class="small" fill="#f7f5ef">1 · Pinned ticket</text>
+  <text x="477" y="213" text-anchor="middle" class="tiny" fill="#d8e5df"><tspan x="477" y="213">wins; stored per</tspan><tspan x="477" y="227">repo + branch</tspan></text>
+  <path d="M544 204 H563" class="line" stroke="#cbd9d4" marker-end="url(#arrowSoft)"/>
+  <rect x="570" y="177" width="118" height="54" rx="6" fill="#3a5551"/>
+  <text x="629" y="199" text-anchor="middle" class="small" fill="#f7f5ef">2 · Branch regex</text>
+  <text x="629" y="213" text-anchor="middle" class="tiny" fill="#d8e5df"><tspan x="629" y="213">[A-Z][A-Z0-9]+</tspan><tspan x="629" y="227">-\d+</tspan></text>
+  <path d="M693 204 H712" class="line" stroke="#cbd9d4" marker-end="url(#arrowSoft)"/>
+  <rect x="719" y="177" width="102" height="54" rx="6" fill="#3a5551"/>
+  <text x="770" y="199" text-anchor="middle" class="small" fill="#f7f5ef">3 · Last commit</text>
+  <text x="770" y="213" text-anchor="middle" class="tiny" fill="#d8e5df"><tspan x="770" y="213">message</tspan><tspan x="770" y="227">fallback</tspan></text>
+  <path d="M846 198 H890" class="line" marker-end="url(#arrow)"/>
+
+  <rect x="900" y="132" width="312" height="132" rx="10" fill="#e5eee8" stroke="#99b5a4" stroke-width="1.2"/>
+  <text x="926" y="160" class="label ink">Shared work context</text>
+  <text x="926" y="188" class="title" font-size="24" fill="#315f58">PROJ-1234</text>
+  <text x="926" y="213" class="body ink">current ticket + changed files</text>
+  <text x="926" y="237" class="small muted">one snapshot feeds every surface</text>
+  <path d="M1212 198 H1254" class="dash" marker-end="url(#arrowSoft)"/>
+  <rect x="1265" y="132" width="285" height="132" rx="10" class="card"/>
+  <text x="1290" y="160" class="label ink">If there is no key</text>
+  <text x="1290" y="187" class="body muted">Current work shows a welcome state:</text>
+  <text x="1290" y="211" class="small ink">Pin a ticket · Start work on issue</text>
+  <text x="1290" y="236" class="small muted">then creates a correctly named branch</text>
+
+  <!-- Provider cards -->
+  <text x="50" y="306" class="section ink">2. FOUR PROVIDERS ADD THE CONTEXT THAT MATTERS</text>
+  <path d="M1056 264 V286 H198 V322" class="dash" marker-end="url(#arrowSoft)"/>
+  <path d="M1056 286 H574 V322" class="dash" marker-end="url(#arrowSoft)"/>
+  <path d="M1056 286 H950 V322" class="dash" marker-end="url(#arrowSoft)"/>
+  <path d="M1056 286 H1326 V322" class="dash" marker-end="url(#arrowSoft)"/>
+
+  <rect x="50" y="322" width="300" height="198" rx="10" class="jira"/>
+  <circle cx="78" cy="351" r="10" class="green"/><text x="98" y="356" class="label ink">Jira</text>
+  <text x="76" y="385" class="body ink">Current ticket</text>
+  <text x="76" y="402" class="small muted"><tspan x="76" y="402">summary, description, status,</tspan><tspan x="76" y="418">subtasks, comments</tspan></text>
+  <text x="76" y="438" class="body ink">My tasks</text>
+  <text x="76" y="461" class="small muted">assigned queue; filter &amp; priority-aware sort</text>
+  <text x="76" y="491" class="body ink">Transitions</text>
+  <text x="76" y="510" class="small muted">change ticket status from the tree</text>
+
+  <rect x="426" y="322" width="300" height="198" rx="10" class="github"/>
+  <circle cx="454" cy="351" r="10" class="bluegrey"/><text x="474" y="356" class="label ink">GitHub</text>
+  <text x="452" y="385" class="body ink">Pull requests, scoped to workspace repos</text>
+  <text x="452" y="409" class="small muted">current branch · mine · awaiting my review</text>
+  <text x="452" y="438" class="body ink">Checks &amp; review state</text>
+  <text x="452" y="461" class="small muted">CI, conflicts, approvals, unresolved threads</text>
+  <text x="452" y="491" class="body ink">Review comments</text>
+  <text x="452" y="510" class="small muted">line-level comments on current PR</text>
+
+  <rect x="802" y="322" width="300" height="198" rx="10" class="figma"/>
+  <circle cx="830" cy="351" r="10" class="accent"/><text x="850" y="356" class="label ink">Figma</text>
+  <text x="828" y="385" class="body ink">Frames linked from the ticket</text>
+  <text x="828" y="409" class="small muted">mines URLs in issue body and comments</text>
+  <text x="828" y="438" class="body ink">Design context</text>
+  <text x="828" y="461" class="small muted">frame names, sizes, colours, typography</text>
+  <text x="828" y="491" class="body ink">Cached frame renders</text>
+  <text x="828" y="510" class="small muted">version-keyed PNG thumbnails</text>
+
+  <rect x="1178" y="322" width="372" height="198" rx="10" class="sentry"/>
+  <circle cx="1206" cy="351" r="10" class="plum"/><text x="1226" y="356" class="label ink">Sentry</text>
+  <text x="1204" y="385" class="body ink">Unresolved production errors</text>
+  <text x="1204" y="409" class="small muted">ticket-key query + errors touching changed files</text>
+  <text x="1204" y="438" class="body ink">Stack frames → workspace files</text>
+  <text x="1204" y="461" class="small muted">path mapping resolves throw sites; never guesses</text>
+  <text x="1204" y="491" class="body ink">Event count &amp; affected users</text>
+  <text x="1204" y="510" class="small muted">errors without a resolvable frame stay in the tree</text>
+
+  <!-- VS code surfaces -->
+  <text x="50" y="564" class="section ink">3. DEVHUB RENDERS THAT CONTEXT INTO NATIVE VS CODE SURFACES</text>
+  <path d="M200 520 V548" class="line" marker-end="url(#arrow)"/><path d="M576 520 V548" class="line" marker-end="url(#arrow)"/><path d="M952 520 V548" class="line" marker-end="url(#arrow)"/><path d="M1364 520 V548" class="line" marker-end="url(#arrow)"/>
+
+  <rect x="50" y="580" width="620" height="190" rx="10" class="card"/>
+  <text x="76" y="610" class="label ink">Sidebar — tree views</text>
+  <rect x="76" y="626" width="258" height="120" rx="6" fill="#eef3f1"/>
+  <text x="94" y="651" class="body ink">▾ Current work</text>
+  <text x="112" y="674" class="small muted">PROJ-1234 · In Progress</text>
+  <text x="94" y="700" class="body ink">▾ My tasks</text>
+  <text x="112" y="722" class="small muted">assigned Jira queue</text>
+  <rect x="354" y="626" width="290" height="120" rx="6" fill="#eef3f1"/>
+  <text x="372" y="651" class="body ink">▾ Pull requests</text>
+  <text x="390" y="674" class="small muted">Current branch · Mine · Awaiting review</text>
+  <text x="372" y="700" class="body ink">▾ Errors · Connections</text>
+  <text x="390" y="722" class="small muted">Sentry issues · provider health</text>
+  <text x="76" y="757" class="tiny muted">Rows open their provider; ticket rows can transition; connections expose auth health.</text>
+
+  <rect x="694" y="580" width="404" height="190" rx="10" class="card"/>
+  <text x="720" y="610" class="label ink">Designs panel &amp; status bar</text>
+  <rect x="720" y="626" width="128" height="91" rx="5" fill="#e8ddd0"/>
+  <rect x="733" y="639" width="102" height="46" rx="3" fill="#d0b796"/>
+  <text x="784" y="706" text-anchor="middle" class="tiny ink">Figma frame</text>
+  <text x="868" y="651" class="body ink">Designs panel</text>
+  <text x="868" y="674" class="small muted">frames, thumbnails, swatches</text>
+  <rect x="720" y="730" width="352" height="25" rx="4" fill="#253a38"/>
+  <text x="733" y="748" class="tiny" fill="#f7f5ef">⑂ PROJ-1234 · In Progress · ⚠ 2 · ◈ 3</text>
+
+  <rect x="1122" y="580" width="428" height="190" rx="10" class="card"/>
+  <text x="1148" y="610" class="label ink">Problems panel &amp; activity badge</text>
+  <rect x="1148" y="626" width="300" height="94" rx="6" fill="#eef3f1"/>
+  <text x="1164" y="651" class="body ink">⚠ Sentry  TypeError — 431 events</text>
+  <text x="1186" y="672" class="small muted">Warning · mapped throw-site line</text>
+  <text x="1164" y="699" class="body ink">ⓘ PR #2671  reviewer comment</text>
+  <text x="1186" y="717" class="small muted">Information · current-branch line</text>
+  <circle cx="1493" cy="656" r="25" class="dark-card"/>
+  <circle cx="1511" cy="638" r="11" class="accent"/>
+  <text x="1511" y="642" text-anchor="middle" class="tiny ink">3</text>
+  <text x="1420" y="704" class="tiny muted">review-request badge</text>
+  <text x="1148" y="752" class="tiny muted">Warning = production defect; Information = PR review feedback.</text>
+
+  <!-- lower operational row -->
+  <rect x="50" y="800" width="640" height="154" rx="10" class="card"/>
+  <text x="76" y="830" class="section ink">REFRESH IS EVENT-DRIVEN, NOT POLLING</text>
+  <text x="76" y="856" class="small ink">Triggers: activation · window focus · branch / changed-file change (500 ms debounce)</text>
+  <text x="76" y="878" class="small ink">credential change · manual Refresh</text>
+  <path d="M76 895 H640" class="line" marker-end="url(#arrow)"/>
+  <text x="76" y="918" class="small muted">Each trigger asks the cache first: fresh → no request; stale → serve now, revalidate in background.</text>
+  <text x="76" y="938" class="tiny muted">Representative TTLs: branch PR 45 s · PR queues / Jira issue 60 s ·</text>
+  <text x="76" y="950" class="tiny muted">My tasks / Sentry issues 2 min · Figma file / event frames 5 min · transitions 1 h</text>
+
+  <rect x="714" y="800" width="386" height="154" rx="10" fill="#eaf0ee" stroke="#b2c4bd" stroke-width="1.2"/>
+  <text x="740" y="830" class="section ink">CREDENTIALS STAY PRIVATE</text>
+  <path d="M742 853 h25 v13 h-25z M747 853 v-8 a7 7 0 0 1 15 0 v8" fill="none" stroke="#4e827b" stroke-width="2"/>
+  <text x="779" y="854" class="body ink">Tokens for all four providers</text>
+  <text x="779" y="878" class="body ink">live in VS Code SecretStorage.</text>
+  <text x="740" y="909" class="small muted">Never written to settings.json.</text>
+  <text x="740" y="932" class="tiny muted">Plain configuration such as Jira URL or Sentry org is separate.</text>
+
+  <rect x="1124" y="800" width="426" height="154" rx="10" class="card"/>
+  <text x="1150" y="830" class="section ink">AGENT MODE + MULTI-ROOT</text>
+  <text x="1150" y="856" class="body ink">Language model tools: <tspan fill="#315f58">#ticket</tspan> · <tspan fill="#8b667d">#errors</tspan> · <tspan fill="#9b7044">#design</tspan></text>
+  <text x="1150" y="879" class="small muted">Figma Desktop MCP server auto-registers when reachable.</text>
+  <path d="M1150 897 H1522" stroke="#d6dfdc" stroke-width="1"/>
+  <text x="1150" y="920" class="small ink">Multi-root: each repo resolves its own ticket</text>
+  <circle cx="1160" cy="929" r="5" class="teal"/><text x="1174" y="933" class="tiny ink">acme-web → ACME-2407</text>
+  <circle cx="1355" cy="929" r="5" fill="#f6f7f5" stroke="#849693" stroke-width="1.5"/><text x="1369" y="933" class="tiny ink">acme-api → ACME-2405</text>
+  <text x="1150" y="950" class="tiny muted">Filled bullet = active editor’s repo (status, errors, designs follow it).</text>
+</svg>

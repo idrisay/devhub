@@ -4,6 +4,8 @@ Jira, Figma and Sentry in one VS Code sidebar, keyed off the branch you're on.
 
 Check out `feature/PROJ-1234-fix-login` and DevHub shows the Jira issue, the Figma frames linked from it, the Sentry errors touching the files you changed, and a status bar line that summarises all of it. **My tasks** sits alongside it with everything else assigned to you.
 
+[![DevHub in one picture: the current branch resolves to a ticket, four providers add context, and DevHub renders it into the sidebar, status bar and Problems panel.](resources/overview.png)](resources/overview.svg)
+
 ## Run it
 
 ```bash
