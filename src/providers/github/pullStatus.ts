@@ -1,0 +1,359 @@
+/**
+ * Everything about how a pull request's state is derived and presented, kept
+ * free of both `vscode` and the network so it can be unit tested.
+ */
+
+export type Mergeable = 'mergeable' | 'conflicting' | 'unknown';
+export type ReviewDecision = 'approved' | 'changes_requested' | 'review_required' | 'none';
+export type CheckRollup = 'success' | 'failure' | 'pending' | 'neutral' | 'none';
+
+/** A pull request as it appears in the "mine" and "awaiting my review" lists. */
+export interface PullSummary {
+  number: number;
+  title: string;
+  url: string;
+  /** `owner/name`. */
+  repo: string;
+  author: string;
+  isDraft: boolean;
+  createdAt: string;
+  updatedAt: string;
+  mergeable: Mergeable;
+  reviewDecision: ReviewDecision;
+  checks: CheckRollup;
+  unresolvedThreads: number;
+  additions: number;
+  deletions: number;
+  /** True when the viewer has already submitted a review on this PR. */
+  viewerReviewed: boolean;
+}
+
+export type PullFlagId =
+  | 'conflict'
+  | 'changes-requested'
+  | 'checks-failing'
+  | 'unresolved'
+  | 'approved'
+  | 'checks-pending'
+  | 'awaiting-review'
+  | 'draft';
+
+export interface PullFlag {
+  id: PullFlagId;
+  label: string;
+  icon: string;
+  color?: string;
+}
+
+/**
+ * The states a pull request is in, most actionable first.
+ *
+ * Order is the whole point: a PR is usually in several of these at once, and
+ * the first one decides the row's icon. Conflicts lead because they block
+ * every other outcome — an approved PR that won't merge still needs a rebase
+ * before anything else can happen to it.
+ */
+export function pullFlags(pull: PullSummary): PullFlag[] {
+  const flags: PullFlag[] = [];
+
+  if (pull.mergeable === 'conflicting') {
+    flags.push({ id: 'conflict', label: 'Conflicts', icon: 'git-merge', color: 'charts.red' });
+  }
+  if (pull.reviewDecision === 'changes_requested') {
+    flags.push({
+      id: 'changes-requested',
+      label: 'Changes requested',
+      icon: 'request-changes',
+      color: 'charts.orange'
+    });
+  }
+  if (pull.checks === 'failure') {
+    flags.push({ id: 'checks-failing', label: 'Checks failing', icon: 'error', color: 'charts.red' });
+  }
+  if (pull.unresolvedThreads > 0) {
+    flags.push({
+      id: 'unresolved',
+      label: `${pull.unresolvedThreads} unresolved`,
+      icon: 'comment-unresolved',
+      color: 'charts.orange'
+    });
+  }
+  if (pull.reviewDecision === 'approved') {
+    flags.push({ id: 'approved', label: 'Approved', icon: 'check', color: 'charts.green' });
+  }
+  if (pull.checks === 'pending') {
+    flags.push({ id: 'checks-pending', label: 'Checks running', icon: 'sync~spin' });
+  }
+  // A draft isn't waiting on anyone, so "awaiting review" would be a lie.
+  if (pull.reviewDecision === 'review_required' && !pull.isDraft) {
+    flags.push({ id: 'awaiting-review', label: 'Awaiting review', icon: 'eye', color: 'charts.blue' });
+  }
+  if (pull.isDraft) {
+    flags.push({
+      id: 'draft',
+      label: 'Draft',
+      icon: 'git-pull-request-draft',
+      color: 'descriptionForeground'
+    });
+  }
+
+  return flags;
+}
+
+const PLAIN_OPEN: PullFlag = {
+  id: 'awaiting-review',
+  label: 'Open',
+  icon: 'git-pull-request',
+  color: 'charts.green'
+};
+
+/** The flag that drives the row icon. Never undefined, so callers stay simple. */
+export function primaryFlag(pull: PullSummary): PullFlag {
+  return pullFlags(pull)[0] ?? PLAIN_OPEN;
+}
+
+/** The flag labels, for a row description or a tooltip line. */
+export function describePull(pull: PullSummary): string {
+  const flags = pullFlags(pull);
+  return flags.length > 0 ? flags.map((f) => f.label).join(' · ') : 'Open';
+}
+
+/**
+ * Compact age, for showing how long a review request has been sitting there.
+ * Anything under a minute reads as "just now" rather than "0m".
+ */
+export function formatAge(iso: string, now: number = Date.now()): string | undefined {
+  const then = Date.parse(iso);
+  if (Number.isNaN(then)) {
+    return undefined;
+  }
+  const minutes = Math.floor((now - then) / 60_000);
+  if (minutes < 1) {
+    return 'just now';
+  }
+  if (minutes < 60) {
+    return `${minutes}m`;
+  }
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) {
+    return `${hours}h`;
+  }
+  const days = Math.floor(hours / 24);
+  return days < 365 ? `${days}d` : `${Math.floor(days / 365)}y`;
+}
+
+export type PullSort = 'updated-desc' | 'updated-asc' | 'created-desc' | 'created-asc';
+
+export const DEFAULT_PULL_SORT: PullSort = 'updated-desc';
+
+export const PULL_SORTS: {
+  key: PullSort;
+  label: string;
+  description: string;
+  short: string;
+}[] = [
+  {
+    key: 'updated-desc',
+    label: 'Recently updated',
+    description: 'Newest activity first',
+    short: 'Updated'
+  },
+  {
+    key: 'updated-asc',
+    label: 'Least recently updated',
+    description: 'Stalest first',
+    short: 'Stalest'
+  },
+  { key: 'created-desc', label: 'Newest', description: 'Most recently opened first', short: 'Newest' },
+  { key: 'created-asc', label: 'Oldest', description: 'Open the longest first', short: 'Oldest' }
+];
+
+export function isPullSort(value: unknown): value is PullSort {
+  return PULL_SORTS.some((s) => s.key === value);
+}
+
+export function pullSortLabel(sort: PullSort): string {
+  const match = PULL_SORTS.find((s) => s.key === sort);
+  return match ? `${match.label} · ${match.description}` : sort;
+}
+
+/** Terse form for the view header, where there is only room for a word. */
+export function pullSortShortLabel(sort: PullSort): string {
+  return PULL_SORTS.find((s) => s.key === sort)?.short ?? sort;
+}
+
+function millis(iso: string): number {
+  const parsed = Date.parse(iso);
+  return Number.isNaN(parsed) ? 0 : parsed;
+}
+
+export function sortPulls(pulls: readonly PullSummary[], sort: PullSort): PullSummary[] {
+  // Repo then number as the tie-break, so equal timestamps produce a stable
+  // order instead of shuffling between refreshes.
+  const stable = (a: PullSummary, b: PullSummary) =>
+    a.repo.localeCompare(b.repo) || a.number - b.number;
+
+  const comparators: Record<PullSort, (a: PullSummary, b: PullSummary) => number> = {
+    'updated-desc': (a, b) => millis(b.updatedAt) - millis(a.updatedAt) || stable(a, b),
+    'updated-asc': (a, b) => millis(a.updatedAt) - millis(b.updatedAt) || stable(a, b),
+    'created-desc': (a, b) => millis(b.createdAt) - millis(a.createdAt) || stable(a, b),
+    'created-asc': (a, b) => millis(a.createdAt) - millis(b.createdAt) || stable(a, b)
+  };
+
+  return [...pulls].sort(comparators[sort]);
+}
+
+// --- Wire-format translation -------------------------------------------------
+
+export function mergeableFromApi(value: string | null | undefined): Mergeable {
+  switch (value) {
+    case 'MERGEABLE':
+      return 'mergeable';
+    case 'CONFLICTING':
+      return 'conflicting';
+    default:
+      // Includes 'UNKNOWN': GitHub computes mergeability lazily and reports
+      // UNKNOWN on the first ask while it works it out.
+      return 'unknown';
+  }
+}
+
+export function reviewDecisionFromApi(value: string | null | undefined): ReviewDecision {
+  switch (value) {
+    case 'APPROVED':
+      return 'approved';
+    case 'CHANGES_REQUESTED':
+      return 'changes_requested';
+    case 'REVIEW_REQUIRED':
+      return 'review_required';
+    default:
+      return 'none';
+  }
+}
+
+/** GraphQL `statusCheckRollup.state`. */
+export function checksFromRollup(value: string | null | undefined): CheckRollup {
+  switch (value) {
+    case 'SUCCESS':
+      return 'success';
+    case 'FAILURE':
+    case 'ERROR':
+      return 'failure';
+    case 'PENDING':
+    case 'EXPECTED':
+      return 'pending';
+    default:
+      return 'none';
+  }
+}
+
+/** One `PullRequest` node as the GraphQL query asks for it. */
+export interface ApiPullNode {
+  number: number;
+  title: string;
+  url: string;
+  isDraft: boolean;
+  createdAt: string;
+  updatedAt: string;
+  additions: number;
+  deletions: number;
+  mergeable?: string | null;
+  reviewDecision?: string | null;
+  author?: { login?: string } | null;
+  repository?: { nameWithOwner?: string } | null;
+  viewerLatestReview?: { state?: string } | null;
+  reviewThreads?: { nodes?: ({ isResolved?: boolean } | null)[] | null } | null;
+  commits?: {
+    nodes?: ({ commit?: { statusCheckRollup?: { state?: string } | null } } | null)[] | null;
+  } | null;
+}
+
+export function summaryFromApi(node: ApiPullNode): PullSummary {
+  const threads = node.reviewThreads?.nodes ?? [];
+  const rollup = node.commits?.nodes?.[0]?.commit?.statusCheckRollup?.state;
+
+  return {
+    number: node.number,
+    title: node.title,
+    url: node.url,
+    repo: node.repository?.nameWithOwner ?? '',
+    author: node.author?.login ?? 'unknown',
+    isDraft: Boolean(node.isDraft),
+    createdAt: node.createdAt,
+    updatedAt: node.updatedAt,
+    mergeable: mergeableFromApi(node.mergeable),
+    reviewDecision: reviewDecisionFromApi(node.reviewDecision),
+    checks: checksFromRollup(rollup),
+    unresolvedThreads: threads.filter((t) => t && t.isResolved === false).length,
+    additions: node.additions ?? 0,
+    deletions: node.deletions ?? 0,
+    viewerReviewed: Boolean(node.viewerLatestReview?.state)
+  };
+}
+
+export interface ReviewLike {
+  state: string;
+  submitted_at: string;
+  user?: { login?: string } | null;
+}
+
+/**
+ * Collapses a review list into one decision, the way GitHub's own branch rules
+ * do: only a reviewer's latest review counts, and a bare comment is not a
+ * verdict. Used for the current-branch PR, which comes from REST and so has no
+ * `reviewDecision` field of its own.
+ */
+export function reviewDecisionFrom(reviews: readonly ReviewLike[]): ReviewDecision {
+  const latestByUser = new Map<string, string>();
+  for (const review of [...reviews].sort((a, b) => a.submitted_at.localeCompare(b.submitted_at))) {
+    if (review.state !== 'COMMENTED') {
+      latestByUser.set(review.user?.login ?? '', review.state);
+    }
+  }
+  const states = [...latestByUser.values()];
+  if (states.includes('CHANGES_REQUESTED')) {
+    return 'changes_requested';
+  }
+  if (states.includes('APPROVED')) {
+    return 'approved';
+  }
+  return states.length > 0 ? 'review_required' : 'none';
+}
+
+export interface CheckRunLike {
+  status: string;
+  conclusion?: string | null;
+}
+
+/** REST check-run status, for the current-branch PR's per-check rows. */
+export function checkRunStatus(run: CheckRunLike): 'pending' | 'success' | 'failure' | 'neutral' {
+  if (run.status !== 'completed') {
+    return 'pending';
+  }
+  switch (run.conclusion) {
+    case 'success':
+      return 'success';
+    case 'failure':
+    case 'timed_out':
+    case 'cancelled':
+      return 'failure';
+    default:
+      return 'neutral';
+  }
+}
+
+/** Worst-case roll-up of individual check runs: one failure fails the set. */
+export function rollUpChecks(
+  states: readonly ('pending' | 'success' | 'failure' | 'neutral')[]
+): CheckRollup {
+  if (states.length === 0) {
+    return 'none';
+  }
+  if (states.includes('failure')) {
+    return 'failure';
+  }
+  if (states.includes('pending')) {
+    return 'pending';
+  }
+  return states.includes('success') ? 'success' : 'neutral';
+}

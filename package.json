@@ -1,0 +1,537 @@
+{
+  "name": "devhub",
+  "displayName": "DevHub",
+  "description": "Jira, Figma and Sentry in one sidebar, keyed off the branch you're on.",
+  "version": "0.1.0",
+  "publisher": "local",
+  "private": true,
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.101.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./dist/extension.js",
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": false
+    }
+  },
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "devhub",
+          "title": "DevHub",
+          "icon": "resources/devhub.svg"
+        }
+      ]
+    },
+    "views": {
+      "devhub": [
+        {
+          "id": "devhub.ticket",
+          "name": "Current work",
+          "icon": "$(checklist)"
+        },
+        {
+          "id": "devhub.tasks",
+          "name": "My tasks",
+          "icon": "$(list-unordered)"
+        },
+        {
+          "id": "devhub.pullRequests",
+          "name": "Pull requests",
+          "icon": "$(git-pull-request)"
+        },
+        {
+          "id": "devhub.designs",
+          "name": "Designs",
+          "type": "webview"
+        },
+        {
+          "id": "devhub.errors",
+          "name": "Errors",
+          "icon": "$(bug)"
+        },
+        {
+          "id": "devhub.providers",
+          "name": "Connections",
+          "icon": "$(plug)",
+          "visibility": "collapsed"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "devhub.ticket",
+        "contents": "No ticket for this branch yet.\n\nDevHub reads a ticket key such as PROJ-1234 out of your branch name.\n\n[Pin a ticket](command:devhub.pinTicket)\n[Start work on an issue](command:devhub.startWork)\n\nNot connected to Jira yet?\n[Connect a service](command:devhub.signIn)"
+      }
+    ],
+    "commands": [
+      {
+        "command": "devhub.refresh",
+        "title": "Refresh",
+        "category": "DevHub",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "devhub.signIn",
+        "title": "Connect a service\u2026",
+        "category": "DevHub"
+      },
+      {
+        "command": "devhub.signOut",
+        "title": "Clear credentials\u2026",
+        "category": "DevHub"
+      },
+      {
+        "command": "devhub.pinTicket",
+        "title": "Pin ticket\u2026",
+        "category": "DevHub",
+        "icon": "$(pin)"
+      },
+      {
+        "command": "devhub.unpinTicket",
+        "title": "Unpin ticket",
+        "category": "DevHub",
+        "icon": "$(pinned)"
+      },
+      {
+        "command": "devhub.startWork",
+        "title": "Start work on issue\u2026",
+        "category": "DevHub"
+      },
+      {
+        "command": "devhub.transitionIssue",
+        "title": "Change ticket status\u2026",
+        "category": "DevHub",
+        "icon": "$(arrow-right)"
+      },
+      {
+        "command": "devhub.addComment",
+        "title": "Comment on ticket\u2026",
+        "category": "DevHub"
+      },
+      {
+        "command": "devhub.openTicket",
+        "title": "Open ticket in browser",
+        "category": "DevHub",
+        "icon": "$(link-external)"
+      },
+      {
+        "command": "devhub.openDesign",
+        "title": "Open design for this file",
+        "category": "DevHub"
+      },
+      {
+        "command": "devhub.showActions",
+        "title": "Show actions\u2026",
+        "category": "DevHub"
+      },
+      {
+        "command": "devhub.showLogs",
+        "title": "Show logs",
+        "category": "DevHub"
+      },
+      {
+        "command": "devhub.copyBranchName",
+        "title": "Copy branch name for ticket",
+        "category": "DevHub",
+        "icon": "$(clippy)"
+      },
+      {
+        "command": "devhub.diagnosePathMapping",
+        "title": "Diagnose Sentry path mapping\u2026",
+        "category": "DevHub"
+      },
+      {
+        "command": "devhub.clearCache",
+        "title": "Clear cache",
+        "category": "DevHub"
+      },
+      {
+        "command": "devhub.tasks.filterByStatus",
+        "title": "Filter tasks by status\u2026",
+        "category": "DevHub",
+        "icon": "$(filter)"
+      },
+      {
+        "command": "devhub.tasks.clearFilter",
+        "title": "Clear task status filter",
+        "category": "DevHub",
+        "icon": "$(clear-all)"
+      },
+      {
+        "command": "devhub.tasks.setSort",
+        "title": "Sort tasks\u2026",
+        "category": "DevHub",
+        "icon": "$(sort-precedence)"
+      },
+      {
+        "command": "devhub.pullRequests.setSort",
+        "title": "Sort pull requests\u2026",
+        "category": "DevHub",
+        "icon": "$(sort-precedence)"
+      },
+      {
+        "command": "devhub.clearCredentials",
+        "title": "Clear credentials",
+        "category": "DevHub",
+        "icon": "$(trash)"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "devhub.refresh",
+          "when": "view =~ /^devhub\\./",
+          "group": "navigation@9"
+        },
+        {
+          "command": "devhub.pinTicket",
+          "when": "view == devhub.ticket && !devhub.pinned",
+          "group": "navigation@1"
+        },
+        {
+          "command": "devhub.unpinTicket",
+          "when": "view == devhub.ticket && devhub.pinned",
+          "group": "navigation@1"
+        },
+        {
+          "command": "devhub.tasks.filterByStatus",
+          "when": "view == devhub.tasks",
+          "group": "navigation@1"
+        },
+        {
+          "command": "devhub.tasks.clearFilter",
+          "when": "view == devhub.tasks && devhub.tasksFiltered",
+          "group": "navigation@2"
+        },
+        {
+          "command": "devhub.tasks.setSort",
+          "when": "view == devhub.tasks",
+          "group": "navigation@3"
+        },
+        {
+          "command": "devhub.pullRequests.setSort",
+          "when": "view == devhub.pullRequests",
+          "group": "navigation@1"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "devhub.openTicket",
+          "when": "view == devhub.ticket && viewItem == devhub.issue",
+          "group": "inline"
+        },
+        {
+          "command": "devhub.openTicket",
+          "when": "view == devhub.tasks && viewItem == devhub.task",
+          "group": "inline"
+        },
+        {
+          "command": "devhub.transitionIssue",
+          "when": "view == devhub.tasks && viewItem == devhub.task",
+          "group": "1_modify@1"
+        },
+        {
+          "command": "devhub.clearCredentials",
+          "when": "view == devhub.providers && viewItem == devhub.provider.connected",
+          "group": "1_auth@1"
+        },
+        {
+          "command": "devhub.signIn",
+          "when": "view == devhub.providers && viewItem == devhub.provider.empty",
+          "group": "1_auth@1"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "devhub.unpinTicket",
+          "when": "devhub.pinned"
+        },
+        {
+          "command": "devhub.tasks.clearFilter",
+          "when": "devhub.tasksFiltered"
+        },
+        {
+          "command": "devhub.clearCredentials",
+          "when": "false"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "DevHub",
+      "properties": {
+        "devhub.ticketKeyPattern": {
+          "type": "string",
+          "default": "[A-Z][A-Z0-9]+-\\d+",
+          "markdownDescription": "Regular expression used to find a ticket key in the branch name or last commit message."
+        },
+        "devhub.branchTemplate": {
+          "type": "string",
+          "default": "${key}-${slug}",
+          "markdownDescription": "Branch name template for `Start work on issue`. Supports `${key}`, `${slug}`, `${type}`."
+        },
+        "devhub.jira.baseUrl": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Jira site URL, for example `https://acme.atlassian.net`.",
+          "scope": "machine-overridable"
+        },
+        "devhub.jira.email": {
+          "type": "string",
+          "default": "",
+          "description": "Atlassian account email, paired with the API token you enter via Connect a service.",
+          "scope": "machine-overridable"
+        },
+        "devhub.jira.jql": {
+          "type": "string",
+          "default": "assignee = currentUser() AND statusCategory != Done ORDER BY updated DESC",
+          "description": "JQL used for the issue picker and the fallback list when no ticket is detected."
+        },
+        "devhub.jira.tasksJql": {
+          "type": "string",
+          "default": "assignee = currentUser() AND (statusCategory != Done OR resolutiondate >= -14d) ORDER BY updated DESC",
+          "markdownDescription": "JQL behind the **My tasks** view. Whatever this returns is what the status filter can choose from, so widen it to filter over more statuses. Ordering is applied in the view, not by this query."
+        },
+        "devhub.jira.inProgressTransition": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Name of the transition (or the status it moves to) to offer after `Start work on issue`. Leave empty to match \"In progress\", \"Start\" or \"Doing\" automatically."
+        },
+        "devhub.jira.tasksLimit": {
+          "type": "number",
+          "default": 100,
+          "minimum": 1,
+          "maximum": 200,
+          "description": "Maximum number of assigned tasks to fetch for the My tasks view."
+        },
+        "devhub.sentry.baseUrl": {
+          "type": "string",
+          "default": "https://sentry.io",
+          "description": "Sentry base URL. Change this for a self-hosted instance."
+        },
+        "devhub.sentry.organization": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Sentry organization slug \u2014 the `acme` in `https://acme.sentry.io`. Pasting the full organization URL works too; the slug is taken out of it."
+        },
+        "devhub.sentry.projects": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "Sentry project slugs to search."
+        },
+        "devhub.sentry.environment": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Restrict Sentry queries to one environment, for example `production`. Empty means all environments."
+        },
+        "devhub.sentry.pathMappings": {
+          "type": "array",
+          "default": [
+            {
+              "from": "app:///",
+              "to": ""
+            }
+          ],
+          "items": {
+            "type": "object",
+            "properties": {
+              "from": {
+                "type": "string"
+              },
+              "to": {
+                "type": "string"
+              }
+            }
+          },
+          "markdownDescription": "Rewrites applied to stack frame filenames before resolving them against the workspace root."
+        },
+        "devhub.sentry.diagnostics": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show production errors as warnings in the Problems panel."
+        },
+        "devhub.sentry.codeLens": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show event counts above lines that appear in production stack traces."
+        },
+        "devhub.figma.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Render Figma frames linked from the ticket."
+        },
+        "devhub.github.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show pull requests for the current branch, your open pull requests, and the ones awaiting your review."
+        },
+        "devhub.github.baseUrl": {
+          "type": "string",
+          "default": "https://api.github.com",
+          "markdownDescription": "GitHub REST base URL. For GitHub Enterprise use `https://your-host/api/v3`; the GraphQL endpoint and the remote host to match are derived from it."
+        },
+        "devhub.github.limit": {
+          "type": "number",
+          "default": 50,
+          "minimum": 1,
+          "maximum": 100,
+          "description": "Maximum pull requests to fetch per queue."
+        },
+        "devhub.statusBar.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show the current ticket in the status bar."
+        }
+      }
+    },
+    "languageModelTools": [
+      {
+        "name": "devhub_getTicket",
+        "displayName": "Get current ticket",
+        "modelDescription": "Returns the Jira issue for the branch the user is currently on, including summary, description, acceptance criteria, status and subtasks. Call this before implementing a feature or fix so the work matches what the ticket actually asks for.",
+        "toolReferenceName": "ticket",
+        "canBeReferencedInPrompt": true,
+        "icon": "$(checklist)",
+        "tags": [
+          "devhub"
+        ],
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "key": {
+              "type": "string",
+              "description": "Optional issue key such as PROJ-1234. Defaults to the ticket detected from the current branch."
+            }
+          }
+        }
+      },
+      {
+        "name": "devhub_getErrors",
+        "displayName": "Get production errors",
+        "modelDescription": "Returns unresolved Sentry issues affecting the files changed on the current branch, with the culprit, event count, affected user count and the top stack frames of the latest event.",
+        "toolReferenceName": "errors",
+        "canBeReferencedInPrompt": true,
+        "icon": "$(bug)",
+        "tags": [
+          "devhub"
+        ],
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "query": {
+              "type": "string",
+              "description": "Optional Sentry search query. Defaults to unresolved issues touching the current diff."
+            }
+          }
+        }
+      },
+      {
+        "name": "devhub_getDesign",
+        "displayName": "Get design context",
+        "modelDescription": "Returns the Figma frames linked from the current ticket, including frame names, dimensions, layer structure and the colour and typography values used, so generated UI matches the design.",
+        "toolReferenceName": "design",
+        "canBeReferencedInPrompt": true,
+        "icon": "$(symbol-color)",
+        "tags": [
+          "devhub"
+        ],
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "url": {
+              "type": "string",
+              "description": "Optional Figma frame URL. Defaults to the frames linked from the current ticket."
+            }
+          }
+        }
+      }
+    ],
+    "mcpServerDefinitionProviders": [
+      {
+        "id": "devhub.servers",
+        "label": "DevHub"
+      }
+    ],
+    "walkthroughs": [
+      {
+        "id": "devhub.gettingStarted",
+        "title": "Set up DevHub",
+        "description": "Connect Jira, Sentry, Figma and GitHub, then check out a branch with a ticket key.",
+        "steps": [
+          {
+            "id": "jira",
+            "title": "Connect Jira",
+            "description": "Enter your site URL, email and an API token.\n[Connect Jira](command:devhub.signIn?%5B%22jira%22%5D)",
+            "media": {
+              "markdown": "walkthrough/jira.md"
+            },
+            "completionEvents": [
+              "onCommand:devhub.signIn"
+            ]
+          },
+          {
+            "id": "sentry",
+            "title": "Connect Sentry",
+            "description": "Production errors show up on the line that threw.\n[Connect Sentry](command:devhub.signIn?%5B%22sentry%22%5D)",
+            "media": {
+              "markdown": "walkthrough/sentry.md"
+            }
+          },
+          {
+            "id": "figma",
+            "title": "Connect Figma",
+            "description": "Frames linked from the ticket render in the sidebar.\n[Connect Figma](command:devhub.signIn?%5B%22figma%22%5D)",
+            "media": {
+              "markdown": "walkthrough/figma.md"
+            }
+          },
+          {
+            "id": "github",
+            "title": "Connect GitHub",
+            "description": "See the pull request and review comments for your branch.\n[Connect GitHub](command:devhub.signIn?%5B%22github%22%5D)",
+            "media": {
+              "markdown": "walkthrough/github.md"
+            }
+          },
+          {
+            "id": "branch",
+            "title": "Start work on an issue",
+            "description": "Pick an issue from your queue and DevHub creates the branch.\n[Start work](command:devhub.startWork)",
+            "media": {
+              "markdown": "walkthrough/branch.md"
+            },
+            "completionEvents": [
+              "onCommand:devhub.startWork"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "scripts": {
+    "compile": "node esbuild.js",
+    "watch": "node esbuild.js --watch",
+    "typecheck": "tsc --noEmit",
+    "test": "esbuild test/smoke.ts --bundle --platform=node --format=cjs --target=node20 --outfile=dist/smoke.js --log-level=warning && node dist/smoke.js",
+    "vscode:prepublish": "npm run typecheck && node esbuild.js --production",
+    "package": "vsce package --allow-missing-repository"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/vscode": "^1.101.0",
+    "@vscode/vsce": "^3.2.1",
+    "esbuild": "^0.24.0",
+    "typescript": "^5.7.2"
+  }
+}
