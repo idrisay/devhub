@@ -157,6 +157,28 @@ Results are cached for a minute and revalidated in the background. **DevHub: Ref
 
 The token needs `repo` (and `read:org` for organization repositories).
 
+## When it refreshes
+
+Nothing polls on a schedule. A refresh happens on window focus, on a branch or changed-file change (debounced 500 ms), when credentials change, on activation, and on **DevHub: Refresh**.
+
+Whether a refresh reaches the network is decided by the cache, not by the trigger:
+
+| Data | Cached for |
+|---|---|
+| Branch pull request | 45 s |
+| Pull request queues | 60 s |
+| Jira issue | 60 s |
+| My tasks | 2 min |
+| Sentry issues | 2 min |
+| Sentry event frames | 5 min |
+| Figma file | 5 min |
+| Jira transitions | 1 h |
+| Jira priorities | 24 h |
+
+So alt-tabbing back into the editor usually costs no requests at all. The loading state is only announced if a refresh is still running after 150 ms, so those cached refreshes are invisible rather than flashing a spinner across the sidebar; anything that genuinely has to fetch still shows progress.
+
+**DevHub: Refresh** re-reads through the same TTLs. **DevHub: Clear cache** is the way to force a full refetch.
+
 ## Sentry path mapping
 
 Stack frames arrive as `app:///src/x.ts` or `webpack://app/./src/x.ts`. DevHub strips the common prefixes automatically; for anything else, add rewrites:

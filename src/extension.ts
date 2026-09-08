@@ -80,8 +80,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     ...registerTools(hub),
     registerMcpProvider(),
 
-    // Refresh on window focus, but only when data may have gone stale. Polling
-    // is what gets you rate limited.
+    // Refresh on window focus. Nothing polls on a schedule — polling is what
+    // gets you rate limited — so this and a branch change are what keep the
+    // sidebar current. Staleness is decided by the cache TTLs rather than here,
+    // so a focus refresh usually costs no requests and shows no spinner.
     vscode.window.onDidChangeWindowState((state) => {
       if (state.focused) {
         void hub.refresh();

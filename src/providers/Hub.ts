@@ -36,6 +36,17 @@ export interface HubSnapshot {
 }
 
 /**
+ * How long a refresh may run before the views are told it is loading.
+ *
+ * Every trigger refreshes — window focus most of all — and nearly all of those
+ * are served entirely from cache in a millisecond or two. Announcing `loading`
+ * up front therefore flashed a spinner across the sidebar on every alt-tab
+ * while doing no work at all. Anything that genuinely has to fetch is well
+ * past this by the time it matters.
+ */
+const LOADING_ANNOUNCE_MS = 150;
+
+/**
  * Owns the fan-out. Two rules matter here: every provider call is wrapped in
  * allSettled so one broken integration can't blank the whole sidebar, and every
  * call gets a cancellation token so rapid branch switching doesn't race.
@@ -125,22 +136,40 @@ export class Hub implements vscode.Disposable {
     this.inFlight = source;
     const token = source.token;
 
+    // Publish the new context immediately — the branch and ticket key should
+    // change the moment they change — but say nothing about loading yet.
     const ctx = this.workContext.context;
-    this.snapshot = { ...this.snapshot, context: ctx, loading: true };
+    this.snapshot = { ...this.snapshot, context: ctx, loading: false };
     this.emit();
+
+    // Guarded on `inFlight` as well as the token: a superseded refresh whose
+    // requests have not yet noticed the cancellation must not put the spinner
+    // back up over the refresh that replaced it.
+    const announceLoading = setTimeout(() => {
+      if (this.inFlight === source && !token.isCancellationRequested) {
+        this.snapshot = { ...this.snapshot, loading: true };
+        this.emit();
+      }
+    }, LOADING_ANNOUNCE_MS);
 
     // The task list and the priority scheme don't depend on `ctx`, but they ride
     // along on the same fan-out: both are cached, so a branch switch costs
     // nothing, and the view stays in step with everything else.
-    const [jira, sentry, figma, tasks, priorities, pull, queues] = await Promise.allSettled([
-      this.jira.forContext(ctx, token),
-      this.sentry.forContext(ctx, token),
-      this.figma.forContext(ctx, token),
-      this.jira.isConfigured() ? this.jira.assignedToMe(token) : Promise.resolve([]),
-      this.jira.isConfigured() ? this.jira.priorityOrder(token) : Promise.resolve([]),
-      this.github.forContext(ctx, token),
-      this.github.pullQueues(ctx, token)
-    ]);
+    let settled;
+    try {
+      settled = await Promise.allSettled([
+        this.jira.forContext(ctx, token),
+        this.sentry.forContext(ctx, token),
+        this.figma.forContext(ctx, token),
+        this.jira.isConfigured() ? this.jira.assignedToMe(token) : Promise.resolve([]),
+        this.jira.isConfigured() ? this.jira.priorityOrder(token) : Promise.resolve([]),
+        this.github.forContext(ctx, token),
+        this.github.pullQueues(ctx, token)
+      ]);
+    } finally {
+      clearTimeout(announceLoading);
+    }
+    const [jira, sentry, figma, tasks, priorities, pull, queues] = settled;
 
     if (token.isCancellationRequested) {
       return;
