@@ -1,3 +1,4 @@
+import { rowLabel } from '../../ui/rowText';
 import type { JiraIssue } from './JiraClient';
 
 export type TaskSort = 'priority-desc' | 'priority-asc' | 'updated-desc' | 'key';
@@ -12,15 +13,19 @@ export const TASK_SORTS: { key: TaskSort; label: string; description: string; sh
 ];
 
 /**
- * The text of a task row: key, status, then summary.
+ * The text of a task row: the key, then as much of the summary as fits.
  *
- * The status used to sit in the row's `description`, which VS Code renders
- * after the label — so any task with a long summary pushed its own status out
- * of view, which is the one field you want to scan. Truncation eats the end of
- * the label, so anything that must survive it goes in front of the summary.
+ * The status was in here for a while, in front of the summary, because a long
+ * summary used to push the row's `description` out of view and the status was
+ * the field worth saving. Clamping the summary is the better half of that fix:
+ * with the label bounded there is room for a description again, so the status
+ * has gone back to it — next to the filter that uses it, and next to the age.
  */
-export function taskRowLabel(issue: Pick<JiraIssue, 'key' | 'status' | 'summary'>): string {
-  return [issue.key, issue.status?.trim(), issue.summary].filter(Boolean).join(' · ');
+export function taskRowLabel(
+  issue: Pick<JiraIssue, 'key' | 'summary'>,
+  budget?: number
+): string {
+  return rowLabel({ lead: issue.key, title: issue.summary, budget });
 }
 
 /** Terse form for the view header, where there is only room for a word. */

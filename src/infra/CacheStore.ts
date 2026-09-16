@@ -25,6 +25,8 @@ const PREFIX = 'devhub.cache.';
 export class CacheStore {
   private readonly blobDir: vscode.Uri;
   private readonly revalidating = new Set<string>();
+  /** Concurrent loads of the same key collapse into one request. */
+  private readonly loading = new Map<string, Promise<unknown>>();
 
   constructor(private readonly context: vscode.ExtensionContext) {
     this.blobDir = vscode.Uri.joinPath(context.globalStorageUri, 'blobs');
@@ -55,9 +57,30 @@ export class CacheStore {
       return entry.value;
     }
 
-    const value = await load();
-    await this.set(key, value);
-    return value;
+    return this.load(key, load);
+  }
+
+  /**
+   * A cold load, deduplicated by key.
+   *
+   * Two things arrive here at once often enough to matter: a branch switch that
+   * lands while the previous fan-out is still running, and two views asking for
+   * the same key in the same tick. Without this they became two identical
+   * requests, and the loser overwrote the winner's cache entry.
+   */
+  private async load<T>(key: string, load: () => Promise<T>): Promise<T> {
+    const existing = this.loading.get(key) as Promise<T> | undefined;
+    if (existing) {
+      return existing;
+    }
+    const promise = (async () => {
+      const value = await load();
+      await this.set(key, value);
+      return value;
+    })().finally(() => this.loading.delete(key));
+
+    this.loading.set(key, promise);
+    return promise;
   }
 
   async get<T>(key: string): Promise<T | undefined> {
@@ -78,8 +101,7 @@ export class CacheStore {
     }
     this.revalidating.add(key);
     try {
-      const value = await load();
-      await this.set(key, value);
+      const value = await this.load(key, load);
       onRevalidated(value);
     } catch (err) {
       log.warn(`Background refresh failed for ${key}`);
@@ -108,6 +130,22 @@ export class CacheStore {
     return this.blobDir;
   }
 
+  /**
+   * Drops every entry under a prefix, so the next read is a real request.
+   *
+   * This is what makes an explicit refresh mean it. The TTLs are deliberately
+   * generous — a background revalidation the user never sees is worth more than
+   * a fast-expiring entry that costs a request on every window focus — so the
+   * refresh command needs a way to bypass them.
+   */
+  async invalidate(prefix: string): Promise<void> {
+    for (const key of this.context.globalState.keys()) {
+      if (key.startsWith(PREFIX + prefix)) {
+        await this.context.globalState.update(key, undefined);
+      }
+    }
+  }
+
   async clear(): Promise<void> {
     for (const key of this.context.globalState.keys()) {
       if (key.startsWith(PREFIX)) {
@@ -132,8 +170,17 @@ export const TTL = {
   sentryIssues: 120_000,
   sentryEvent: 5 * 60_000,
   figmaFile: 5 * 60_000,
-  pullRequest: 45_000,
-  // Short: a review landing on someone else's PR is invisible until this
-  // expires, and the whole thing costs one GraphQL request.
-  pullQueues: 60_000
+  // Four REST calls per miss — the pull request, its reviews, its checks and its
+  // comments — so this is the most expensive entry in here. Stale-while-
+  // revalidate means the rows are on screen throughout, and `devhub.refresh`
+  // bypasses it when someone is actually watching a CI run.
+  pullRequest: 90_000,
+  // One GraphQL request for both queues. Long enough that alt-tabbing all
+  // afternoon costs nothing, short enough that a review request shows up while
+  // it still matters.
+  pullQueues: 120_000,
+  // One request for the whole instance, and an alert you can't see for two
+  // minutes is an alert you find out about from someone else.
+  grafanaAlerts: 60_000,
+  grafanaLatency: 120_000
 } as const;

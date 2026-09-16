@@ -16,7 +16,9 @@ import type { Hub } from './providers/Hub';
 import type { JiraIssue } from './providers/jira/JiraClient';
 import type { PullSummary } from './providers/github/pullStatus';
 import { renderReviewPrompt } from './providers/github/reviewPrompt';
+import { renderUpdatePrompt } from './providers/github/updatePrompt';
 import { renderPrompt } from './providers/jira/promptTemplate';
+import { setupAlertScope, setupLatency } from './providers/grafana/setupLatency';
 import { findInProgressTransition } from './providers/jira/transitions';
 import type { ProviderTree } from './ui/ProviderTree';
 import type { PullRequestTree } from './ui/PullRequestTree';
@@ -106,7 +108,13 @@ export function registerCommands(deps: Deps): vscode.Disposable[] {
     if (!result.stored) {
       return;
     }
-    const verifier = { jira: hub.jira, figma: hub.figma, sentry: hub.sentry, github: hub.github }[id];
+    const verifier = {
+      jira: hub.jira,
+      figma: hub.figma,
+      sentry: hub.sentry,
+      github: hub.github,
+      grafana: hub.grafana
+    }[id];
     const identity = result.identity ?? (await verifier.verify());
     providerTree.refresh();
     if (identity) {
@@ -118,7 +126,7 @@ export function registerCommands(deps: Deps): vscode.Disposable[] {
         `DevHub: stored the ${AuthManager.label(id)} token, but the test call failed. Check the Connections view.`
       );
     }
-    await hub.refresh();
+    await hub.refresh({ force: true });
   };
 
   /**
@@ -181,7 +189,7 @@ export function registerCommands(deps: Deps): vscode.Disposable[] {
     }
 
     providerTree.refresh();
-    await hub.refresh();
+    await hub.refresh({ force: true });
 
     const next = await vscode.window.showInformationMessage(
       `DevHub: cleared the ${label} credentials.`,
@@ -212,7 +220,7 @@ export function registerCommands(deps: Deps): vscode.Disposable[] {
         return;
       }
       await hub.jira.transition(key, picked.id);
-      await hub.refresh();
+      await hub.refresh({ force: true });
       void vscode.window.showInformationMessage(`DevHub: ${key} moved to ${picked.label}.`);
     } catch (err) {
       reportError(err, 'Transition failed');
@@ -295,7 +303,7 @@ export function registerCommands(deps: Deps): vscode.Disposable[] {
       }
     }
 
-    await hub.refresh();
+    await hub.refresh({ force: true });
   };
 
   const pinTicket = async () => {
@@ -308,7 +316,7 @@ export function registerCommands(deps: Deps): vscode.Disposable[] {
     });
     if (key) {
       await workContext.pin(key.trim());
-      await hub.refresh();
+      await hub.refresh({ force: true });
     }
   };
 
@@ -328,7 +336,7 @@ export function registerCommands(deps: Deps): vscode.Disposable[] {
     }
     try {
       await hub.jira.addComment(key, body.trim());
-      await hub.refresh();
+      await hub.refresh({ force: true });
       void vscode.window.showInformationMessage(`DevHub: commented on ${key}.`);
     } catch (err) {
       reportError(err, 'Comment failed');
@@ -457,6 +465,33 @@ export function registerCommands(deps: Deps): vscode.Disposable[] {
   };
 
   /**
+   * One of your own pull requests, as a ready-to-paste instruction to go and
+   * unblock it, from `devhub.github.updatePromptTemplate`.
+   *
+   * The mirror of the review button: that one is for someone else's work, this
+   * one is for yours coming back with changes requested, a conflict or a red
+   * build. The renderer is handed the pull request rather than the words so it
+   * can put the same state the row is showing into `${state}` — copying a
+   * prompt that says "blocked on: Conflicts · Checks failing" from a row that
+   * says the same thing is the point.
+   */
+  const copyUpdatePrompt = async (arg?: unknown) => {
+    const pull = pullFrom(arg);
+    if (!pull) {
+      void vscode.window.showInformationMessage(
+        'DevHub: run this from a row in My open pull requests.'
+      );
+      return;
+    }
+    const ticketKey = findTicketKey(pull.title) ?? hub.current.context.ticketKey ?? '';
+    const text = renderUpdatePrompt(config.github.updatePromptTemplate(), pull, ticketKey);
+    await vscode.env.clipboard.writeText(text);
+    void vscode.window.showInformationMessage(
+      `DevHub: copied the update prompt for ${pull.repo}#${pull.number}.`
+    );
+  };
+
+  /**
    * Opens one of the copy-button prompts for editing.
    *
    * Both settings default to empty meaning "use the built-in text", so the
@@ -469,7 +504,8 @@ export function registerCommands(deps: Deps): vscode.Disposable[] {
     const section = () => vscode.workspace.getConfiguration('devhub');
     const raw: Record<PromptSettingId, string> = {
       tasks: section().get<string>('tasks.promptTemplate', ''),
-      review: section().get<string>('github.reviewPromptTemplate', '')
+      review: section().get<string>('github.reviewPromptTemplate', ''),
+      update: section().get<string>('github.updatePromptTemplate', '')
     };
 
     const picked = await vscode.window.showQuickPick(
@@ -501,10 +537,11 @@ export function registerCommands(deps: Deps): vscode.Disposable[] {
     // untouched setting needs seeding.
     let seeded = false;
     if (!isCustomised(raw[setting.id])) {
-      const effective =
-        setting.id === 'tasks'
-          ? config.tasks.promptTemplate()
-          : config.github.reviewPromptTemplate();
+      const effective: string = {
+        tasks: () => config.tasks.promptTemplate(),
+        review: () => config.github.reviewPromptTemplate(),
+        update: () => config.github.updatePromptTemplate()
+      }[setting.id]();
       try {
         await section().update(setting.key, effective, target);
         seeded = true;
@@ -582,15 +619,24 @@ export function registerCommands(deps: Deps): vscode.Disposable[] {
     vscode.commands.registerCommand('devhub.clearCredentials', clearCredentials),
     vscode.commands.registerCommand('devhub.refresh', async () => {
       await workContext.refresh();
-      // An explicit refresh should mean it, so drop the cached task list first.
-      await hub.jira.invalidateTasks();
-      await hub.refresh();
+      // An explicit refresh has to mean it. Everything else in the extension
+      // leans on the caches — that is what keeps the sidebar off the network on
+      // every window focus — so this is the one path that drops the volatile
+      // entries first and then refuses to be held back by the refresh interval.
+      await Promise.all([
+        hub.jira.invalidateTasks(),
+        cache.invalidate('jira.issue.'),
+        cache.invalidate('github.'),
+        cache.invalidate('sentry.issues.'),
+        cache.invalidate('grafana.')
+      ]);
+      await hub.refresh({ force: true });
       providerTree.refresh();
     }),
     vscode.commands.registerCommand('devhub.pinTicket', pinTicket),
     vscode.commands.registerCommand('devhub.unpinTicket', async () => {
       await workContext.unpin();
-      await hub.refresh();
+      await hub.refresh({ force: true });
     }),
     vscode.commands.registerCommand('devhub.startWork', startWork),
     vscode.commands.registerCommand('devhub.transitionIssue', transitionIssue),
@@ -607,12 +653,15 @@ export function registerCommands(deps: Deps): vscode.Disposable[] {
     vscode.commands.registerCommand('devhub.copyBranchName', copyBranchName),
     vscode.commands.registerCommand('devhub.tasks.copyPrompt', copyTaskPrompt),
     vscode.commands.registerCommand('devhub.pullRequests.copyReviewPrompt', copyReviewPrompt),
+    vscode.commands.registerCommand('devhub.pullRequests.copyUpdatePrompt', copyUpdatePrompt),
     vscode.commands.registerCommand('devhub.editCopyPrompt', editCopyPrompt),
     vscode.commands.registerCommand('devhub.diagnosePathMapping', diagnosePathMapping),
+    vscode.commands.registerCommand('devhub.setupLatency', () => setupLatency(hub)),
+    vscode.commands.registerCommand('devhub.setupAlertScope', () => setupAlertScope(hub)),
     vscode.commands.registerCommand('devhub.showLogs', () => log.show()),
     vscode.commands.registerCommand('devhub.clearCache', async () => {
       await cache.clear();
-      await hub.refresh();
+      await hub.refresh({ force: true });
       void vscode.window.showInformationMessage('DevHub: cache cleared.');
     })
   ];

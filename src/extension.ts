@@ -9,6 +9,7 @@ import { registerMcpProvider } from './ai/mcpProvider';
 import { registerTools } from './ai/tools';
 import { DesignPanel } from './ui/DesignPanel';
 import { ErrorTree } from './ui/ErrorTree';
+import { MonitoringTree } from './ui/MonitoringTree';
 import { ProviderTree } from './ui/ProviderTree';
 import { ReviewDiagnostics } from './ui/ReviewDiagnostics';
 import { PullRequestTree } from './ui/PullRequestTree';
@@ -28,6 +29,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const ticketTree = new TicketTree(hub);
   const taskTree = new TaskTree(hub, context.globalState);
   const errorTree = new ErrorTree(hub);
+  const monitoringTree = new MonitoringTree(hub);
   const providerTree = new ProviderTree(hub, auth);
   const designPanel = new DesignPanel(hub, cache);
   const pullRequestTree = new PullRequestTree(hub, context.globalState);
@@ -56,6 +58,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     ticketTree,
     taskTree,
     errorTree,
+    monitoringTree,
     providerTree,
     designPanel,
     pullRequestTree,
@@ -67,6 +70,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     tasksView,
     pullRequestsView,
     vscode.window.createTreeView('devhub.errors', { treeDataProvider: errorTree }),
+    vscode.window.createTreeView('devhub.monitoring', { treeDataProvider: monitoringTree }),
     vscode.window.createTreeView('devhub.providers', { treeDataProvider: providerTree }),
     vscode.window.registerWebviewViewProvider(DesignPanel.viewType, designPanel, {
       webviewOptions: { retainContextWhenHidden: true }
@@ -82,8 +86,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
     // Refresh on window focus. Nothing polls on a schedule — polling is what
     // gets you rate limited — so this and a branch change are what keep the
-    // sidebar current. Staleness is decided by the cache TTLs rather than here,
-    // so a focus refresh usually costs no requests and shows no spinner.
+    // sidebar current. Two gates stand between this and a request: the refresh
+    // interval, which collapses a burst of alt-tabs into one round, and the
+    // cache TTLs, which decide whether that round touches the network at all.
+    // Neither takes rows off the screen while it happens.
     vscode.window.onDidChangeWindowState((state) => {
       if (state.focused) {
         void hub.refresh();

@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { log } from './Logger';
 
-export type ProviderId = 'jira' | 'figma' | 'sentry' | 'github';
+export type ProviderId = 'jira' | 'figma' | 'sentry' | 'github' | 'grafana';
 
 interface CredentialSpec {
   label: string;
@@ -40,6 +40,18 @@ const SPECS: Record<ProviderId, CredentialSpec> = {
     prompt: 'GitHub token with repo and read:org',
     helpUrl: 'https://github.com/settings/tokens',
     requiredSettings: []
+  },
+  grafana: {
+    label: 'Grafana',
+    prompt: 'Grafana service account token with Viewer access',
+    helpUrl: 'https://grafana.com/docs/grafana/latest/administration/service-accounts/',
+    requiredSettings: [
+      {
+        key: 'grafana.baseUrl',
+        label: 'Grafana URL',
+        placeholder: 'https://acme.grafana.net'
+      }
+    ]
   }
 };
 

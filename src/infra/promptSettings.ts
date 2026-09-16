@@ -1,8 +1,9 @@
 import { REVIEW_PROMPT_PLACEHOLDERS } from '../providers/github/reviewPrompt';
+import { UPDATE_PROMPT_PLACEHOLDERS } from '../providers/github/updatePrompt';
 import { PROMPT_PLACEHOLDERS } from '../providers/jira/promptTemplate';
 
 /** Which copy button a prompt belongs to. */
-export type PromptSettingId = 'tasks' | 'review';
+export type PromptSettingId = 'tasks' | 'review' | 'update';
 
 export interface PromptSetting {
   id: PromptSettingId;
@@ -29,13 +30,20 @@ export const PROMPT_SETTINGS: readonly PromptSetting[] = [
     key: 'github.reviewPromptTemplate',
     view: 'Awaiting my review',
     placeholders: REVIEW_PROMPT_PLACEHOLDERS
+  },
+  {
+    id: 'update',
+    setting: 'devhub.github.updatePromptTemplate',
+    key: 'github.updatePromptTemplate',
+    view: 'My open pull requests',
+    placeholders: UPDATE_PROMPT_PLACEHOLDERS
   }
 ];
 
 /**
- * Both settings default to empty meaning "use the built-in text", so a value
- * only counts as an override once it holds something other than whitespace —
- * the same test Config applies when it decides which text to use.
+ * Every prompt setting defaults to empty meaning "use the built-in text", so a
+ * value only counts as an override once it holds something other than
+ * whitespace — the same test Config applies when it decides which text to use.
  */
 export function isCustomised(raw: string | undefined): boolean {
   return (raw ?? '').trim().length > 0;

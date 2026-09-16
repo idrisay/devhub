@@ -7,3 +7,6 @@ tsconfig.json
 **/*.map
 test/**
 dist/smoke.js
+dist/behaviour.js
+resources/overview.png
+resources/overview.svg

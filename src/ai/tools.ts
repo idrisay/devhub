@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import type { Hub } from '../providers/Hub';
 import { extractFigmaRefs } from '../providers/figma/urlParser';
+import { formatDuration } from '../providers/grafana/latencyQuery';
 
 /**
  * These tools are the real product of the AI layer. They work inside agent mode
@@ -129,5 +130,61 @@ export function registerTools(hub: Hub): vscode.Disposable[] {
     }
   });
 
-  return [getTicket, getErrors, getDesign];
+
+  const getAlerts = vscode.lm.registerTool<{ includeLatency?: boolean }>('devhub_getAlerts', {
+    async prepareInvocation() {
+      return { invocationMessage: 'Checking Grafana' };
+    },
+    async invoke(options, token) {
+      const ctx = hub.current.context;
+      const alerts =
+        hub.current.alerts.length > 0 ? hub.current.alerts : await hub.grafana.forContext(ctx, token);
+      const latency =
+        options.input.includeLatency === false
+          ? undefined
+          : (hub.current.latency ?? (await hub.grafana.latency(ctx, token)));
+
+      const lines: string[] = [];
+
+      if (alerts.length === 0) {
+        lines.push('No Grafana alerts are firing for this service.');
+      } else {
+        lines.push(`${alerts.length} Grafana alert(s) firing or pending for this service.`, '');
+        for (const alert of alerts.slice(0, 10)) {
+          lines.push(
+            `## ${alert.name}`,
+            `State: ${alert.state}` +
+              (alert.severity ? ` · Severity: ${alert.severity}` : '') +
+              (alert.instances > 1 ? ` · ${alert.instances} series` : '') +
+              (alert.activeAt ? ` · Active since ${alert.activeAt}` : ''),
+            alert.summary ?? '',
+            `Labels: ${Object.entries(alert.labels)
+              .filter(([key]) => !key.startsWith('__'))
+              .map(([key, value]) => `${key}=${value}`)
+              .join(', ')}`,
+            `URL: ${alert.url}`,
+            ''
+          );
+        }
+      }
+
+      if (latency) {
+        lines.push('## Slowest endpoints (p95)', '');
+        if (latency.note) {
+          lines.push(`Latency is not available: ${latency.note}`);
+        } else if (latency.endpoints.length === 0) {
+          lines.push(`The query returned no series: \`${latency.query}\``);
+        } else {
+          latency.endpoints.forEach((endpoint) =>
+            lines.push(`- ${endpoint.label}: ${formatDuration(endpoint.seconds)}`)
+          );
+          lines.push('', `Query: \`${latency.query}\` over the last ${latency.window}.`);
+        }
+      }
+
+      return text(lines.filter((line) => line !== undefined).join('\n'));
+    }
+  });
+
+  return [getTicket, getErrors, getDesign, getAlerts];
 }

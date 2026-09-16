@@ -1,7 +1,11 @@
 {
   "name": "devhub",
   "displayName": "DevHub",
-  "description": "Jira, Figma and Sentry in one sidebar, keyed off the branch you're on.",
+  "description": "Jira, Figma, Sentry and Grafana in one sidebar, keyed off the branch you're on.",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/idrisay/devhub.git"
+  },
   "version": "0.1.0",
   "publisher": "local",
   "private": true,
@@ -57,6 +61,11 @@
           "id": "devhub.errors",
           "name": "Errors",
           "icon": "$(bug)"
+        },
+        {
+          "id": "devhub.monitoring",
+          "name": "Monitoring",
+          "icon": "$(pulse)"
         },
         {
           "id": "devhub.providers",
@@ -157,6 +166,12 @@
         "icon": "$(copy)"
       },
       {
+        "command": "devhub.pullRequests.copyUpdatePrompt",
+        "title": "Copy update prompt for pull request",
+        "category": "DevHub",
+        "icon": "$(copy)"
+      },
+      {
         "command": "devhub.editCopyPrompt",
         "title": "Edit copy prompt\u2026",
         "category": "DevHub",
@@ -166,6 +181,18 @@
         "command": "devhub.diagnosePathMapping",
         "title": "Diagnose Sentry path mapping\u2026",
         "category": "DevHub"
+      },
+      {
+        "command": "devhub.setupLatency",
+        "title": "Set up latency query\u2026",
+        "category": "DevHub",
+        "icon": "$(tools)"
+      },
+      {
+        "command": "devhub.setupAlertScope",
+        "title": "Fix alert scope\u2026",
+        "category": "DevHub",
+        "icon": "$(filter)"
       },
       {
         "command": "devhub.clearCache",
@@ -239,6 +266,11 @@
           "command": "devhub.pullRequests.setSort",
           "when": "view == devhub.pullRequests",
           "group": "navigation@1"
+        },
+        {
+          "command": "devhub.setupLatency",
+          "when": "view == devhub.monitoring",
+          "group": "navigation"
         }
       ],
       "view/item/context": [
@@ -276,6 +308,11 @@
           "command": "devhub.pullRequests.copyReviewPrompt",
           "when": "view == devhub.pullRequests && viewItem == devhub.pull.review",
           "group": "inline"
+        },
+        {
+          "command": "devhub.pullRequests.copyUpdatePrompt",
+          "when": "view == devhub.pullRequests && viewItem == devhub.pull.mine",
+          "group": "inline"
         }
       ],
       "commandPalette": [
@@ -293,6 +330,10 @@
         },
         {
           "command": "devhub.pullRequests.copyReviewPrompt",
+          "when": "false"
+        },
+        {
+          "command": "devhub.pullRequests.copyUpdatePrompt",
           "when": "false"
         }
       ]
@@ -432,10 +473,93 @@
           "editPresentation": "multilineText",
           "markdownDescription": "Text copied by the clipboard button on a row in **Awaiting my review**. Placeholders: `${url}`, `${repo}`, `${number}`, `${title}`, `${author}`, `${key}` (the ticket key found in the pull request title, empty if there is none). Leave empty to use the built-in review prompt. Run **DevHub: Edit copy prompt\u2026** to open this filled in with the prompt in use, rather than editing it from blank."
         },
+        "devhub.github.updatePromptTemplate": {
+          "type": "string",
+          "default": "",
+          "editPresentation": "multilineText",
+          "markdownDescription": "Text copied by the clipboard button on a row in **My open pull requests**. Placeholders: `${url}`, `${repo}`, `${number}`, `${title}`, `${state}` (what the row says is blocking it, such as `Conflicts \u00b7 Changes requested \u00b7 Checks failing`), `${key}` (the ticket key found in the pull request title, empty if there is none). Leave empty to use the built-in prompt that reads the review threads, the diff and the failing checks, then addresses them. Run **DevHub: Edit copy prompt\u2026** to open this filled in with the prompt in use, rather than editing it from blank."
+        },
         "devhub.statusBar.enabled": {
           "type": "boolean",
           "default": true,
           "description": "Show the current ticket in the status bar."
+        },
+        "devhub.rows.titleLength": {
+          "type": "number",
+          "default": 40,
+          "minimum": 0,
+          "maximum": 200,
+          "markdownDescription": "Characters a task or pull request title may take in a row before it is shortened, so the rest of the row \u2014 the age, the repository, the review state \u2014 stays visible. The full title is always in the row's tooltip. Set to `0` to never shorten."
+        },
+        "devhub.refresh.minIntervalSeconds": {
+          "type": "number",
+          "default": 15,
+          "minimum": 0,
+          "maximum": 600,
+          "markdownDescription": "Shortest gap between background refreshes of Jira, GitHub, Sentry, Figma and Grafana. Window focus, saves and Git state events all trigger a refresh, so this is the floor that keeps them from becoming requests. A branch switch and **DevHub: Refresh** ignore it. Set to `0` to refresh on every trigger."
+        },
+        "devhub.grafana.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show Grafana alerts and endpoint latency."
+        },
+        "devhub.grafana.baseUrl": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Grafana base URL, e.g. `https://acme.grafana.net`. Asked for when you connect Grafana."
+        },
+        "devhub.grafana.services": {
+          "type": "object",
+          "default": {},
+          "additionalProperties": {
+            "type": "string"
+          },
+          "markdownDescription": "Maps a repository name to the PromQL label selector that identifies its service, e.g. `{ \"acme-web\": \"service=web, env=prod\" }`. Only equality matchers are supported. Unmapped repositories fall back to matching the repository name against `#devhub.grafana.serviceLabels#`."
+        },
+        "devhub.grafana.serviceLabels": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "service",
+            "app",
+            "job",
+            "namespace"
+          ],
+          "markdownDescription": "Label names to match a repository name against when it has no entry in `#devhub.grafana.services#`. The first one is also used to build the latency query selector."
+        },
+        "devhub.grafana.latency.datasourceUid": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "UID of the Prometheus datasource to run the latency query against. Find it in the datasource URL in Grafana. Without this, the Slowest endpoints group stays empty."
+        },
+        "devhub.grafana.latency.datasourceKind": {
+          "type": "string",
+          "enum": [
+            "prometheus",
+            "loki"
+          ],
+          "default": "prometheus",
+          "markdownDescription": "Which query language `#devhub.grafana.latency.query#` is written in. `prometheus` for PromQL against metrics, `loki` for LogQL against access logs. **DevHub: Set up latency query\u2026** sets this for you."
+        },
+        "devhub.grafana.latency.query": {
+          "type": "string",
+          "default": "",
+          "editPresentation": "multilineText",
+          "markdownDescription": "PromQL for the slowest endpoints. `${selector}`, `${window}`, `${limit}` and `${service}` are filled in; an unrecognised placeholder is left as written. Leave empty for the built-in p95-per-route query."
+        },
+        "devhub.grafana.latency.window": {
+          "type": "string",
+          "default": "1h",
+          "markdownDescription": "Range the latency query looks back over, as a PromQL duration such as `15m`, `1h` or `24h`."
+        },
+        "devhub.grafana.latency.limit": {
+          "type": "number",
+          "default": 5,
+          "minimum": 1,
+          "maximum": 25,
+          "description": "How many endpoints to list."
         }
       }
     },
@@ -499,6 +623,26 @@
             }
           }
         }
+      },
+      {
+        "name": "devhub_getAlerts",
+        "displayName": "Get alerts and latency",
+        "modelDescription": "Returns the Grafana alerts firing for the service the current repository maps to, with severity, labels and how long each has been active, plus the slowest endpoints by p95 latency. Call this to check whether a change is degrading the service, or before investigating a performance complaint.",
+        "toolReferenceName": "alerts",
+        "canBeReferencedInPrompt": true,
+        "icon": "$(pulse)",
+        "tags": [
+          "devhub"
+        ],
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "includeLatency": {
+              "type": "boolean",
+              "description": "Include the slowest-endpoints query. Defaults to true."
+            }
+          }
+        }
       }
     ],
     "mcpServerDefinitionProviders": [
@@ -530,6 +674,14 @@
             "description": "Production errors show up on the line that threw.\n[Connect Sentry](command:devhub.signIn?%5B%22sentry%22%5D)",
             "media": {
               "markdown": "walkthrough/sentry.md"
+            }
+          },
+          {
+            "id": "grafana",
+            "title": "Connect Grafana",
+            "description": "Alerts and the slowest endpoints for the service you\u2019re in.\n[Connect Grafana](command:devhub.signIn?%5B%22grafana%22%5D)",
+            "media": {
+              "markdown": "walkthrough/grafana.md"
             }
           },
           {
@@ -567,9 +719,11 @@
     "compile": "node esbuild.js",
     "watch": "node esbuild.js --watch",
     "typecheck": "tsc --noEmit",
-    "test": "esbuild test/smoke.ts --bundle --platform=node --format=cjs --target=node20 --outfile=dist/smoke.js --log-level=warning && node dist/smoke.js",
+    "test": "npm run test:units && npm run test:behaviour",
+    "test:units": "esbuild test/smoke.ts --bundle --platform=node --format=cjs --target=node20 --outfile=dist/smoke.js --log-level=warning && node dist/smoke.js",
+    "test:behaviour": "esbuild test/behaviour.ts --bundle --platform=node --format=cjs --target=node20 --external:vscode --outfile=dist/behaviour.js --log-level=warning && node test/support/run.js",
     "vscode:prepublish": "npm run typecheck && node esbuild.js --production",
-    "package": "vsce package --allow-missing-repository"
+    "package": "vsce package"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
