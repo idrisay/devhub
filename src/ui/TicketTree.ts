@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { answered } from '../providers/refreshPlan';
 import type { Hub, HubSnapshot } from '../providers/Hub';
 import type { JiraIssue } from '../providers/jira/JiraClient';
 import type { ProviderStatus } from '../providers/Provider';
@@ -163,8 +164,11 @@ export class TicketTree implements vscode.TreeDataProvider<Node>, vscode.Disposa
       return node.kind === 'group' || node.kind === 'repo' ? node.children : [];
     }
 
-    const { context, loading, jiraStatus } = this.snapshot;
+    const { context, jiraStatus } = this.snapshot;
     const broken = isBroken(jiraStatus);
+    // "Waiting" rather than "refreshing": an issue already on screen stays put
+    // while it revalidates, and only a key nobody has looked up yet spins.
+    const waiting = !answered(this.snapshot, 'jira');
 
     const working = withTickets(context.work);
 
@@ -178,12 +182,12 @@ export class TicketTree implements vscode.TreeDataProvider<Node>, vscode.Disposa
       return working.map((work) => ({
         kind: 'repo',
         work,
-        children: this.nodesFor(work.ticketKey as string, loading, broken, jiraStatus)
+        children: this.nodesFor(work.ticketKey as string, waiting, broken, jiraStatus)
       }));
     }
 
     if (working.length === 0) {
-      if (broken && !loading) {
+      if (broken && !waiting) {
         // Returning a node suppresses viewsWelcome, which would otherwise claim
         // there is simply no ticket for this branch.
         return [this.failureNode(jiraStatus)];
@@ -192,20 +196,20 @@ export class TicketTree implements vscode.TreeDataProvider<Node>, vscode.Disposa
       return [];
     }
 
-    return this.nodesFor(working[0].ticketKey as string, loading, broken, jiraStatus);
+    return this.nodesFor(working[0].ticketKey as string, waiting, broken, jiraStatus);
   }
 
   /** The rows for one ticket: the issue itself and everything hanging off it. */
   private nodesFor(
     key: string,
-    loading: boolean,
+    waiting: boolean,
     broken: boolean,
     jiraStatus: ProviderStatus
   ): Node[] {
     const issue = this.snapshot.issues[key];
 
     if (!issue) {
-      if (loading) {
+      if (waiting) {
         return [{ kind: 'message', label: `Loading ${key}…`, icon: 'sync~spin' }];
       }
       if (broken) {

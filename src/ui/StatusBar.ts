@@ -24,7 +24,7 @@ export class StatusBar implements vscode.Disposable {
       return;
     }
 
-    const { context, issue, errors, designs, loading } = snapshot;
+    const { context, issue, errors, designs, alerts, loading } = snapshot;
 
     if (!context.ticketKey) {
       this.item.text = '$(git-branch) No ticket';
@@ -51,6 +51,10 @@ export class StatusBar implements vscode.Disposable {
     if (diffErrors > 0) {
       parts.push(`$(warning) ${diffErrors}`);
     }
+    const firing = alerts.filter((alert) => alert.state === 'firing').length;
+    if (firing > 0) {
+      parts.push(`$(flame) ${firing}`);
+    }
     if (designs.length > 0) {
       parts.push(`$(symbol-color) ${designs.length}`);
     }
@@ -70,6 +74,9 @@ export class StatusBar implements vscode.Disposable {
     if (diffErrors > 0) {
       tooltip.appendMarkdown(`$(warning) ${diffErrors} production error(s) in files you changed\n\n`);
     }
+    if (firing > 0) {
+      tooltip.appendMarkdown(`$(flame) ${firing} Grafana alert(s) firing for this service\n\n`);
+    }
     if (context.pinned) {
       tooltip.appendMarkdown('_Pinned_ · [Unpin](command:devhub.unpinTicket)\n\n');
     }
@@ -77,7 +84,9 @@ export class StatusBar implements vscode.Disposable {
     this.item.tooltip = tooltip;
 
     this.item.backgroundColor =
-      diffErrors > 0 ? new vscode.ThemeColor('statusBarItem.warningBackground') : undefined;
+      diffErrors > 0 || firing > 0
+        ? new vscode.ThemeColor('statusBarItem.warningBackground')
+        : undefined;
 
     this.item.show();
   }

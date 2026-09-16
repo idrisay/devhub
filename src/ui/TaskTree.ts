@@ -1,4 +1,7 @@
 import * as vscode from 'vscode';
+import { answered } from '../providers/refreshPlan';
+import { config } from '../infra/Config';
+import { rowLabel, rowMeta } from './rowText';
 import type { Hub, HubSnapshot } from '../providers/Hub';
 import type { JiraIssue } from '../providers/jira/JiraClient';
 import {
@@ -66,7 +69,7 @@ export class TaskTree implements vscode.TreeDataProvider<Node>, vscode.Disposabl
   readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
 
   private snapshot: HubSnapshot;
-  private readonly subscription: vscode.Disposable;
+  private readonly subscriptions: vscode.Disposable[] = [];
   private view?: vscode.TreeView<Node>;
 
   private statusFilter: string[];
@@ -81,10 +84,15 @@ export class TaskTree implements vscode.TreeDataProvider<Node>, vscode.Disposabl
     this.sort = isTaskSort(storedSort) ? storedSort : DEFAULT_TASK_SORT;
     this.statusFilter = state.get<string[]>(FILTER_KEY, []);
 
-    this.subscription = hub.onDidChange((s) => {
-      this.snapshot = s;
-      this.render();
-    });
+    this.subscriptions.push(
+      hub.onDidChange((s) => {
+        this.snapshot = s;
+        this.render();
+      }),
+      // How long a row's title may be is a setting, and nothing else would
+      // redraw the rows until the next round of data came in.
+      config.onDidChange(() => this.render())
+    );
     void this.publishContext();
   }
 
@@ -181,7 +189,7 @@ export class TaskTree implements vscode.TreeDataProvider<Node>, vscode.Disposabl
       case 'task': {
         const { issue } = node;
         const item = new vscode.TreeItem(
-          taskRowLabel(issue),
+          taskRowLabel(issue, config.rows.titleLength()),
           issue.subtasks.length > 0
             ? vscode.TreeItemCollapsibleState.Collapsed
             : vscode.TreeItemCollapsibleState.None
@@ -195,9 +203,10 @@ export class TaskTree implements vscode.TreeDataProvider<Node>, vscode.Disposabl
           icon.color ? new vscode.ThemeColor(icon.color) : undefined
         );
 
-        // Status has moved into the label, so the description is just recency.
+        // Both of these are why the label is clamped: put the status first —
+        // it is what the filter works on — and the age after it.
         const updated = relativeTime(issue.updated);
-        item.description = updated;
+        item.description = rowMeta(issue.status?.trim(), updated);
         item.contextValue = 'devhub.task';
 
         const tooltip = new vscode.MarkdownString('', true);
@@ -223,7 +232,15 @@ export class TaskTree implements vscode.TreeDataProvider<Node>, vscode.Disposabl
         return item;
       }
       case 'subtask': {
-        const item = new vscode.TreeItem(`${node.key}  ${node.summary}`);
+        const item = new vscode.TreeItem(
+          rowLabel({
+            lead: node.key,
+            title: node.summary,
+            separator: '  ',
+            budget: config.rows.titleLength()
+          })
+        );
+        item.tooltip = `${node.key} — ${node.summary}`;
         item.iconPath = new vscode.ThemeIcon('circle-small');
         item.description = node.status;
         item.command = {
@@ -275,10 +292,10 @@ export class TaskTree implements vscode.TreeDataProvider<Node>, vscode.Disposabl
       ];
     }
 
-    const { tasks, loading } = this.snapshot;
+    const { tasks } = this.snapshot;
 
     if (tasks.length === 0) {
-      if (loading) {
+      if (!answered(this.snapshot, 'jira')) {
         return [{ kind: 'message', label: 'Loading your tasks…', icon: 'sync~spin' }];
       }
       if (status.health === 'rate-limited') {
@@ -326,7 +343,7 @@ export class TaskTree implements vscode.TreeDataProvider<Node>, vscode.Disposabl
   }
 
   dispose(): void {
-    this.subscription.dispose();
+    this.subscriptions.forEach((subscription) => subscription.dispose());
     this._onDidChangeTreeData.dispose();
   }
 }

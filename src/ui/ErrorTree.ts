@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { answered } from '../providers/refreshPlan';
 import type { Hub, HubSnapshot } from '../providers/Hub';
 import type { LocatedIssue } from '../providers/sentry/SentryProvider';
 
@@ -87,6 +88,11 @@ export class ErrorTree implements vscode.TreeDataProvider<Node>, vscode.Disposab
     }
   }
 
+  /** Sentry has not answered for this context yet, so there is nothing to claim. */
+  private waiting(): boolean {
+    return !answered(this.snapshot, 'sentry');
+  }
+
   getChildren(node?: Node): Node[] {
     if (node) {
       if (node.kind !== 'error') {
@@ -129,8 +135,8 @@ export class ErrorTree implements vscode.TreeDataProvider<Node>, vscode.Disposab
       return [
         {
           kind: 'message',
-          label: this.snapshot.loading ? 'Loading…' : 'No production errors in your changes',
-          icon: this.snapshot.loading ? 'sync~spin' : 'pass'
+          label: this.waiting() ? 'Loading…' : 'No production errors in your changes',
+          icon: this.waiting() ? 'sync~spin' : 'pass'
         }
       ];
     }

@@ -1,7 +1,10 @@
 import * as vscode from 'vscode';
 import { DEFAULT_REVIEW_PROMPT_TEMPLATE } from '../providers/github/reviewPrompt';
+import { DEFAULT_UPDATE_PROMPT_TEMPLATE } from '../providers/github/updatePrompt';
 import { DEFAULT_PROMPT_TEMPLATE } from '../providers/jira/promptTemplate';
+import { DEFAULT_LATENCY_QUERY } from '../providers/grafana/latencyQuery';
 import { normaliseOrgSlug } from '../providers/sentry/orgSlug';
+import { DEFAULT_TITLE_LENGTH } from '../ui/rowText';
 
 export interface PathMapping {
   from: string;
@@ -17,6 +20,35 @@ export const config = {
   ticketKeyPattern: (): string => section().get<string>('ticketKeyPattern', '[A-Z][A-Z0-9]+-\\d+'),
   branchTemplate: (): string => section().get<string>('branchTemplate', '${key}-${slug}'),
   statusBarEnabled: (): boolean => section().get<boolean>('statusBar.enabled', true),
+
+  rows: {
+    /**
+     * Characters a row's label may take. The rest of the row is the
+     * description — the age, the repository, the review state — and a label
+     * that takes the whole width leaves none of it visible. `0` turns the
+     * clamping off for anyone running a very wide sidebar.
+     */
+    titleLength: (): number => {
+      const value = section().get<number>('rows.titleLength', DEFAULT_TITLE_LENGTH);
+      const length = Number.isFinite(value) ? Math.trunc(value) : DEFAULT_TITLE_LENGTH;
+      return Math.min(Math.max(length, 0), 200);
+    }
+  },
+
+  refresh: {
+    /**
+     * The shortest gap between two background rounds of provider requests.
+     *
+     * Nothing polls, but the triggers that do exist — window focus, a Git state
+     * event, a save — fire far more often than the data changes, so this is the
+     * floor. A branch switch and the refresh command both ignore it.
+     */
+    minIntervalMs: (): number => {
+      const value = section().get<number>('refresh.minIntervalSeconds', 15);
+      const seconds = Number.isFinite(value) ? Math.trunc(value) : 15;
+      return Math.min(Math.max(seconds, 0), 600) * 1000;
+    }
+  },
 
   jira: {
     baseUrl: (): string => section().get<string>('jira.baseUrl', '').replace(/\/+$/, ''),
@@ -48,6 +80,35 @@ export const config = {
     codeLens: (): boolean => section().get<boolean>('sentry.codeLens', true)
   },
 
+  grafana: {
+    enabled: (): boolean => section().get<boolean>('grafana.enabled', true),
+    baseUrl: (): string => section().get<string>('grafana.baseUrl', '').replace(/\/+$/, ''),
+    /** Repository name to PromQL label selector, e.g. `acme-web` -> `service=web`. */
+    services: (): Record<string, string> =>
+      section().get<Record<string, string>>('grafana.services', {}),
+    /** Tried in order when a repository has no mapping of its own. */
+    serviceLabels: (): string[] =>
+      section()
+        .get<string[]>('grafana.serviceLabels', ['service', 'app', 'job', 'namespace'])
+        .filter((label) => Boolean(label?.trim())),
+    latency: {
+      datasourceUid: (): string => section().get<string>('grafana.latency.datasourceUid', ''),
+      /** Which backend the query speaks: PromQL against Prometheus, or LogQL against Loki. */
+      datasourceKind: (): 'prometheus' | 'loki' =>
+        section().get<string>('grafana.latency.datasourceKind', 'prometheus') === 'loki'
+          ? 'loki'
+          : 'prometheus',
+      // Empty means the built-in query, so the default only exists in one place.
+      query: (): string =>
+        section().get<string>('grafana.latency.query', '').trim() || DEFAULT_LATENCY_QUERY,
+      window: (): string => section().get<string>('grafana.latency.window', '1h').trim() || '1h',
+      limit: (): number => {
+        const value = section().get<number>('grafana.latency.limit', 5);
+        return Math.min(Math.max(Math.trunc(value) || 5, 1), 25);
+      }
+    }
+  },
+
   tasks: {
     // Empty means the built-in template, so an override is opt-in and the
     // default only exists in one place.
@@ -69,7 +130,10 @@ export const config = {
     },
     reviewPromptTemplate: (): string =>
       section().get<string>('github.reviewPromptTemplate', '').trim() ||
-      DEFAULT_REVIEW_PROMPT_TEMPLATE
+      DEFAULT_REVIEW_PROMPT_TEMPLATE,
+    updatePromptTemplate: (): string =>
+      section().get<string>('github.updatePromptTemplate', '').trim() ||
+      DEFAULT_UPDATE_PROMPT_TEMPLATE
   },
 
   onDidChange(listener: (e: vscode.ConfigurationChangeEvent) => void): vscode.Disposable {

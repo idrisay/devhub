@@ -46,6 +46,38 @@ export interface PullFlag {
 }
 
 /**
+ * Just the fields the flags are derived from. Everything that reasons about a
+ * pull request's state takes this rather than a whole `PullSummary`, so the
+ * prompt renderers can ask for the state of a pull request without pretending
+ * to hold one.
+ */
+export type PullState = Pick<
+  PullSummary,
+  'mergeable' | 'reviewDecision' | 'checks' | 'unresolvedThreads' | 'isDraft'
+>;
+
+/**
+ * The flags that stop a pull request merging, as opposed to the ones that
+ * merely describe where it has got to. A row may drop "3 unresolved" or "Draft"
+ * when it runs out of space; it may never drop one of these, because they are
+ * the reason you would go and look at the pull request at all.
+ */
+const BLOCKING: ReadonlySet<PullFlagId> = new Set<PullFlagId>([
+  'conflict',
+  'changes-requested',
+  'checks-failing'
+]);
+
+function isBlocking(flag: PullFlag): boolean {
+  return BLOCKING.has(flag.id);
+}
+
+/** Whether the pull request needs work before it can merge. */
+export function isBlocked(pull: PullState): boolean {
+  return pullFlags(pull).some(isBlocking);
+}
+
+/**
  * The states a pull request is in, most actionable first.
  *
  * Order is the whole point: a PR is usually in several of these at once, and
@@ -53,7 +85,7 @@ export interface PullFlag {
  * every other outcome — an approved PR that won't merge still needs a rebase
  * before anything else can happen to it.
  */
-export function pullFlags(pull: PullSummary): PullFlag[] {
+export function pullFlags(pull: PullState): PullFlag[] {
   const flags: PullFlag[] = [];
 
   if (pull.mergeable === 'conflicting') {
@@ -108,14 +140,45 @@ const PLAIN_OPEN: PullFlag = {
 };
 
 /** The flag that drives the row icon. Never undefined, so callers stay simple. */
-export function primaryFlag(pull: PullSummary): PullFlag {
+export function primaryFlag(pull: PullState): PullFlag {
   return pullFlags(pull)[0] ?? PLAIN_OPEN;
 }
 
-/** The flag labels, for a row description or a tooltip line. */
-export function describePull(pull: PullSummary): string {
+/**
+ * The pull request's state as words.
+ *
+ * `max` caps how many flags are named, for the row description — five of them
+ * at once is more than the row can show, and they are pushed in order of what
+ * you would want to know first.
+ *
+ * The cap is a budget for the *informational* flags only. A blocking one —
+ * conflicts, changes requested, failing checks — is never dropped to stay
+ * under it, because a row that says "Conflicts · Changes requested" while
+ * quietly omitting that the tests are also failing is worse than a row that
+ * runs long: it reads as a complete account and isn't one.
+ *
+ * What survives is chosen first and then read back off `pullFlags` in its
+ * order, rather than being concatenated blocking-first. Today those two are
+ * the same list, because the blocking flags are also the first three pushed —
+ * but that is a coincidence of the current order, and a fourth blocking flag
+ * added further down would otherwise jump the queue silently.
+ */
+export function describePull(pull: PullState, max = Number.POSITIVE_INFINITY): string {
   const flags = pullFlags(pull);
-  return flags.length > 0 ? flags.map((f) => f.label).join(' · ') : 'Open';
+  const blocking = flags.filter(isBlocking);
+  const budget = Math.max(max - blocking.length, blocking.length > 0 ? 0 : 1);
+  const keep = new Set([...blocking, ...flags.filter((f) => !isBlocking(f)).slice(0, budget)]);
+  const kept = flags.filter((flag) => keep.has(flag));
+  return kept.length > 0 ? kept.map((f) => f.label).join(' · ') : 'Open';
+}
+
+/**
+ * Row form of an age: "14m ago". "just now" is already a phrase and stays as
+ * one.
+ */
+export function ageLabel(iso: string, now?: number): string | undefined {
+  const age = formatAge(iso, now);
+  return age === undefined || age === 'just now' ? age : `${age} ago`;
 }
 
 /**

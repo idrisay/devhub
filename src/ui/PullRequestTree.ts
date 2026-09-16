@@ -1,11 +1,16 @@
 import * as path from 'path';
 import * as vscode from 'vscode';
 import type { Hub, HubSnapshot } from '../providers/Hub';
+import { answered, sectionState, type SectionState } from '../providers/refreshPlan';
+import { config } from '../infra/Config';
+import { rowLabel, rowMeta } from './rowText';
 import type { PullRequest } from '../providers/github/GitHubClient';
 import {
+  ageLabel,
   DEFAULT_PULL_SORT,
   describePull,
   formatAge,
+  isBlocked,
   isPullSort,
   primaryFlag,
   pullFlags,
@@ -69,9 +74,10 @@ export class PullRequestTree implements vscode.TreeDataProvider<Node>, vscode.Di
   readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
 
   private snapshot: HubSnapshot;
-  private readonly subscription: vscode.Disposable;
+  private readonly subscriptions: vscode.Disposable[] = [];
   private view?: vscode.TreeView<Node>;
   private sort: PullSort;
+  private rendered?: string;
 
   constructor(
     hub: Hub,
@@ -81,10 +87,15 @@ export class PullRequestTree implements vscode.TreeDataProvider<Node>, vscode.Di
     const stored = state.get<unknown>(SORT_KEY);
     this.sort = isPullSort(stored) ? stored : DEFAULT_PULL_SORT;
 
-    this.subscription = hub.onDidChange((s) => {
-      this.snapshot = s;
-      this.render();
-    });
+    this.subscriptions.push(
+      hub.onDidChange((s) => {
+        this.snapshot = s;
+        this.render();
+      }),
+      // How long a row's title may be is a setting, and nothing else would
+      // redraw the rows until the next round of data came in.
+      config.onDidChange(() => this.render())
+    );
   }
 
   attach(view: vscode.TreeView<Node>): void {
@@ -112,7 +123,36 @@ export class PullRequestTree implements vscode.TreeDataProvider<Node>, vscode.Di
 
   private render(): void {
     this.updateHeader();
+
+    // Firing this rebuilds every row and collapses whatever the user had open,
+    // so it may only happen when the rows have actually changed. A refresh that
+    // comes back with the same queues — which is most of them — should be
+    // invisible apart from the header hint updated just above.
+    const key = this.renderKey();
+    if (key === this.rendered) {
+      return;
+    }
+    this.rendered = key;
     this._onDidChangeTreeData.fire();
+  }
+
+  /** Everything the rows are drawn from, and nothing that only the header is. */
+  private renderKey(): string {
+    const s = this.snapshot;
+    return JSON.stringify([
+      s.context.branch,
+      s.context.repoRoot,
+      s.context.githubRepo,
+      s.context.repos,
+      s.pull,
+      s.myPulls,
+      s.reviewRequests,
+      s.githubStatus,
+      s.loaded.github,
+      s.contextLoaded,
+      this.sort,
+      config.rows.titleLength()
+    ]);
   }
 
   /**
@@ -127,8 +167,13 @@ export class PullRequestTree implements vscode.TreeDataProvider<Node>, vscode.Di
     const waiting = this.snapshot.reviewRequests.length;
     const mine = this.snapshot.myPulls.length;
 
-    this.view.description =
-      mine + waiting === 0 ? undefined : `${mine + waiting} · ${pullSortShortLabel(this.sort)}`;
+    // A background refresh belongs in the header, not in the rows: the queues
+    // stay on screen and readable while it runs.
+    const parts = [
+      mine + waiting === 0 ? undefined : `${mine + waiting} · ${pullSortShortLabel(this.sort)}`,
+      this.snapshot.refreshing.github ? 'refreshing…' : undefined
+    ].filter(Boolean);
+    this.view.description = parts.length > 0 ? parts.join(' · ') : undefined;
     this.view.badge =
       waiting === 0
         ? undefined
@@ -136,6 +181,15 @@ export class PullRequestTree implements vscode.TreeDataProvider<Node>, vscode.Di
             value: waiting,
             tooltip: `${waiting} pull request${waiting === 1 ? '' : 's'} awaiting your review`
           };
+  }
+
+  /**
+   * Whether a section has rows, is still waiting for GitHub's first answer, or
+   * is genuinely empty. Every group asks this rather than reading a refresh
+   * flag, so a background revalidation never takes rows off the screen.
+   */
+  private stateOf(hasData: boolean): SectionState {
+    return sectionState({ hasData, answered: answered(this.snapshot, 'github') });
   }
 
   /** `mine` minus the branch PR, which already has its own section above. */
@@ -170,7 +224,12 @@ export class PullRequestTree implements vscode.TreeDataProvider<Node>, vscode.Di
       case 'branchPull': {
         const { pull } = node;
         const item = new vscode.TreeItem(
-          `#${pull.number}  ${pull.title}`,
+          rowLabel({
+            lead: `#${pull.number}`,
+            title: pull.title,
+            separator: '  ',
+            budget: config.rows.titleLength()
+          }),
           vscode.TreeItemCollapsibleState.Expanded
         );
         item.iconPath = themeIcon(BRANCH_STATE_ICON[pull.state] ?? BRANCH_STATE_ICON.open);
@@ -181,9 +240,7 @@ export class PullRequestTree implements vscode.TreeDataProvider<Node>, vscode.Di
           review_required: 'Awaiting review',
           none: undefined
         }[pull.reviewDecision];
-        item.description = [pull.state === 'open' ? undefined : pull.state, review]
-          .filter(Boolean)
-          .join(' · ');
+        item.description = rowMeta(pull.state === 'open' ? undefined : pull.state, review);
 
         const tooltip = new vscode.MarkdownString('', true);
         tooltip.appendMarkdown(`**#${pull.number}** ${pull.title}\n\n`);
@@ -206,21 +263,34 @@ export class PullRequestTree implements vscode.TreeDataProvider<Node>, vscode.Di
 
       case 'pull': {
         const { pull } = node;
-        const item = new vscode.TreeItem(`#${pull.number}  ${pull.title}`);
+        const item = new vscode.TreeItem(
+          rowLabel({
+            lead: `#${pull.number}`,
+            title: pull.title,
+            separator: '  ',
+            budget: config.rows.titleLength()
+          })
+        );
         item.iconPath = themeIcon(primaryFlag(pull));
 
-        // Show the timestamp the current sort is keyed on, so the ordering the
-        // user picked is legible in the rows themselves.
+        // Ordered by what you would look for, because the row clips from the
+        // right: the state it is in, then how long it has been in it, then
+        // whose it is, then which repository. The title above is clamped so
+        // that at least the first two of those always have somewhere to go.
+        //
+        // Two flags is the budget, not the limit: `describePull` spends it on
+        // the informational flags and never drops a blocking one, so a pull
+        // request that conflicts *and* has changes requested *and* is failing
+        // its checks says all three here rather than hiding the last in the
+        // tooltip. Those three are why you would open it.
         const byCreation = this.sort.startsWith('created');
-        const age = formatAge(byCreation ? pull.createdAt : pull.updatedAt);
-        item.description = [
-          pull.repo,
+        const age = ageLabel(byCreation ? pull.createdAt : pull.updatedAt);
+        item.description = rowMeta(
+          describePull(pull, 2),
+          age,
           node.group === 'review' ? pull.author : undefined,
-          describePull(pull),
-          age
-        ]
-          .filter(Boolean)
-          .join(' · ');
+          pull.repo
+        );
 
         const tooltip = new vscode.MarkdownString('', true);
         tooltip.appendMarkdown(`**${pull.repo}#${pull.number}**\n\n${pull.title}\n\n`);
@@ -234,6 +304,12 @@ export class PullRequestTree implements vscode.TreeDataProvider<Node>, vscode.Di
         }
         if (node.group === 'review' && pull.viewerReviewed) {
           tooltip.appendMarkdown('$(comment) You have already reviewed this — a new review was requested\n\n');
+        }
+        // Only on your own, and only when there is something to unblock: the
+        // button is inline on the row, but an inline button is easy to miss
+        // until you know it is there.
+        if (node.group === 'mine' && isBlocked(pull)) {
+          tooltip.appendMarkdown('$(copy) The button on this row copies a prompt to fix it\n\n');
         }
         const opened = formatAge(pull.createdAt);
         const touched = formatAge(pull.updatedAt);
@@ -287,11 +363,14 @@ export class PullRequestTree implements vscode.TreeDataProvider<Node>, vscode.Di
 
       case 'comment': {
         const { comment, repoRoot } = node;
-        const item = new vscode.TreeItem(comment.body.replace(/\s+/g, ' ').slice(0, 80));
+        const item = new vscode.TreeItem(
+          rowLabel({ title: comment.body, budget: config.rows.titleLength() })
+        );
         item.iconPath = new vscode.ThemeIcon('comment');
-        item.description = `${comment.author} · ${comment.path?.split('/').pop() ?? 'pull request'}${
-          comment.line ? `:${comment.line}` : ''
-        }`;
+        item.description = rowMeta(
+          comment.author,
+          `${comment.path?.split('/').pop() ?? 'pull request'}${comment.line ? `:${comment.line}` : ''}`
+        );
         item.tooltip = new vscode.MarkdownString(
           `**${comment.author}** on \`${comment.path ?? 'the pull request'}\`\n\n${comment.body}`
         );
@@ -412,7 +491,6 @@ export class PullRequestTree implements vscode.TreeDataProvider<Node>, vscode.Di
       return [];
     }
 
-    const { loading } = this.snapshot;
     const status = this.snapshot.githubStatus;
 
     switch (node.id) {
@@ -420,7 +498,7 @@ export class PullRequestTree implements vscode.TreeDataProvider<Node>, vscode.Di
         if (this.snapshot.pull) {
           return [{ kind: 'branchPull', pull: this.snapshot.pull }];
         }
-        if (loading) {
+        if (this.stateOf(false) === 'first-load') {
           return [{ kind: 'message', label: 'Loading…', icon: 'sync~spin' }];
         }
         if (!this.snapshot.context.branch) {
@@ -450,7 +528,7 @@ export class PullRequestTree implements vscode.TreeDataProvider<Node>, vscode.Di
         if (pulls.length > 0) {
           return pulls.map((pull) => ({ kind: 'pull', pull, group: 'mine' }));
         }
-        return [this.emptyMessage(loading, status, 'You have no open pull requests')];
+        return [this.emptyMessage(status, 'You have no open pull requests')];
       }
 
       case 'review': {
@@ -458,18 +536,14 @@ export class PullRequestTree implements vscode.TreeDataProvider<Node>, vscode.Di
         if (pulls.length > 0) {
           return pulls.map((pull) => ({ kind: 'pull', pull, group: 'review' }));
         }
-        return [this.emptyMessage(loading, status, 'Nothing waiting on your review')];
+        return [this.emptyMessage(status, 'Nothing waiting on your review')];
       }
     }
   }
 
   /** An empty group is only good news once GitHub has actually answered. */
-  private emptyMessage(
-    loading: boolean,
-    status: HubSnapshot['githubStatus'],
-    allClear: string
-  ): Node {
-    if (loading) {
+  private emptyMessage(status: HubSnapshot['githubStatus'], allClear: string): Node {
+    if (this.stateOf(false) === 'first-load') {
       return { kind: 'message', label: 'Loading…', icon: 'sync~spin' };
     }
     if (status.health === 'rate-limited') {
@@ -496,7 +570,7 @@ export class PullRequestTree implements vscode.TreeDataProvider<Node>, vscode.Di
   }
 
   dispose(): void {
-    this.subscription.dispose();
+    this.subscriptions.forEach((subscription) => subscription.dispose());
     this._onDidChangeTreeData.dispose();
   }
 }

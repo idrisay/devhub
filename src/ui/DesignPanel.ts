@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import type { CacheStore } from '../infra/CacheStore';
+import { answered } from '../providers/refreshPlan';
 import type { Hub, HubSnapshot } from '../providers/Hub';
 import type { DesignFrame } from '../providers/figma/FigmaProvider';
 
@@ -164,11 +165,11 @@ ${this.body()}
       return '<div class="empty">Designs appear once a ticket is detected for this branch.</div>';
     }
     if (this.snapshot.designs.length === 0) {
-      return this.snapshot.loading
-        ? '<div class="empty">Loading frames…</div>'
-        : `<div class="empty">No Figma links found on ${escapeHtml(
+      return answered(this.snapshot, 'figma')
+        ? `<div class="empty">No Figma links found on ${escapeHtml(
             this.snapshot.context.ticketKey
-          )}. Paste a frame URL into the ticket and refresh.</div>`;
+          )}. Paste a frame URL into the ticket and refresh.</div>`
+        : '<div class="empty">Loading frames…</div>';
     }
 
     return this.snapshot.designs.map((frame) => this.frameHtml(frame)).join('\n');
