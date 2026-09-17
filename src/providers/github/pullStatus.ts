@@ -325,6 +325,12 @@ export interface ApiPullNode {
   author?: { login?: string } | null;
   repository?: { nameWithOwner?: string } | null;
   viewerLatestReview?: { state?: string } | null;
+  latestOpinionatedReviews?: {
+    nodes?: ({ state?: string; author?: { login?: string } | null } | null)[] | null;
+  } | null;
+  reviewRequests?: {
+    nodes?: ({ requestedReviewer?: { login?: string } | null } | null)[] | null;
+  } | null;
   reviewThreads?: { nodes?: ({ isResolved?: boolean } | null)[] | null } | null;
   commits?: {
     nodes?: ({ commit?: { statusCheckRollup?: { state?: string } | null } } | null)[] | null;
@@ -345,7 +351,7 @@ export function summaryFromApi(node: ApiPullNode): PullSummary {
     createdAt: node.createdAt,
     updatedAt: node.updatedAt,
     mergeable: mergeableFromApi(node.mergeable),
-    reviewDecision: reviewDecisionFromApi(node.reviewDecision),
+    reviewDecision: decisionFromNode(node),
     checks: checksFromRollup(rollup),
     unresolvedThreads: threads.filter((t) => t && t.isResolved === false).length,
     additions: node.additions ?? 0,
@@ -360,27 +366,104 @@ export interface ReviewLike {
   user?: { login?: string } | null;
 }
 
+/** GitHub logins differ only in case, so compare them folded. */
+function sameLogin(login: string | null | undefined): string {
+  return (login ?? '').toLowerCase();
+}
+
+/** The reviewers still being waited on, from either wire format. */
+function pendingReviewersOf(node: ApiPullNode): string[] {
+  return (node.reviewRequests?.nodes ?? [])
+    .map((request) => request?.requestedReviewer?.login)
+    .filter((login): login is string => Boolean(login));
+}
+
+/**
+ * The verdicts that still stand, once the ones a re-request has superseded are
+ * dropped.
+ *
+ * GitHub only lists a reviewer as requested while the request is outstanding —
+ * it drops them the moment they submit — so a reviewer who has both a verdict
+ * on record and a request outstanding has been asked again since, and their
+ * old verdict is no longer what the pull request is waiting on.
+ */
+function standingVerdicts(
+  verdicts: readonly { author: string; state: string }[],
+  pendingReviewers: readonly string[]
+): string[] {
+  const pending = new Set(pendingReviewers.map(sameLogin));
+  return verdicts.filter((v) => !pending.has(sameLogin(v.author))).map((v) => v.state);
+}
+
+/**
+ * The pull request's decision, corrected for re-requested reviews.
+ *
+ * GitHub leaves `reviewDecision` at CHANGES_REQUESTED after the author
+ * re-requests the reviewer who asked for the changes: it only clears when that
+ * reviewer submits a new review, or the old one is dismissed outright. The ball
+ * is back in the reviewer's court, though, so a row that still says "Changes
+ * requested" is reporting work that has already been done.
+ *
+ * Only that one relaxation is applied. Every other decision is GitHub's own,
+ * because it is the only side that knows the branch's protection rules — how
+ * many approvals are required, and whose count.
+ */
+function decisionFromNode(node: ApiPullNode): ReviewDecision {
+  const decision = reviewDecisionFromApi(node.reviewDecision);
+  if (decision !== 'changes_requested') {
+    return decision;
+  }
+  const verdicts = (node.latestOpinionatedReviews?.nodes ?? [])
+    .filter((review): review is { state?: string; author?: { login?: string } | null } =>
+      Boolean(review)
+    )
+    .map((review) => ({ author: review.author?.login ?? '', state: review.state ?? '' }));
+  if (verdicts.length === 0) {
+    // Either the query didn't ask for them or GitHub didn't say; with nothing
+    // to reason from, its own decision stands.
+    return decision;
+  }
+  const standing = standingVerdicts(verdicts, pendingReviewersOf(node));
+  return standing.includes('CHANGES_REQUESTED') ? 'changes_requested' : 'review_required';
+}
+
 /**
  * Collapses a review list into one decision, the way GitHub's own branch rules
  * do: only a reviewer's latest review counts, and a bare comment is not a
  * verdict. Used for the current-branch PR, which comes from REST and so has no
  * `reviewDecision` field of its own.
+ *
+ * `pendingReviewers` are the logins with a review request outstanding; a
+ * verdict from one of them has been superseded by a fresh request and no longer
+ * counts, the same correction `decisionFromNode` makes on the GraphQL side.
  */
-export function reviewDecisionFrom(reviews: readonly ReviewLike[]): ReviewDecision {
+export function reviewDecisionFrom(
+  reviews: readonly ReviewLike[],
+  pendingReviewers: readonly string[] = []
+): ReviewDecision {
   const latestByUser = new Map<string, string>();
   for (const review of [...reviews].sort((a, b) => a.submitted_at.localeCompare(b.submitted_at))) {
     if (review.state !== 'COMMENTED') {
-      latestByUser.set(review.user?.login ?? '', review.state);
+      latestByUser.set(sameLogin(review.user?.login), review.state);
     }
   }
-  const states = [...latestByUser.values()];
-  if (states.includes('CHANGES_REQUESTED')) {
+  const standing = standingVerdicts(
+    [...latestByUser].map(([author, state]) => ({ author, state })),
+    pendingReviewers
+  );
+  if (standing.includes('CHANGES_REQUESTED')) {
     return 'changes_requested';
   }
-  if (states.includes('APPROVED')) {
+  if (standing.includes('APPROVED')) {
     return 'approved';
   }
-  return states.length > 0 ? 'review_required' : 'none';
+  if (standing.length > 0) {
+    return 'review_required';
+  }
+  // Nothing stands: either someone has been asked and not answered yet, or
+  // every verdict on record has been superseded by a fresh request. Both are
+  // the pull request waiting on a reviewer.
+  return latestByUser.size > 0 || pendingReviewers.length > 0 ? 'review_required' : 'none';
 }
 
 export interface CheckRunLike {

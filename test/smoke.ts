@@ -462,6 +462,72 @@ check('a dismissed review still counts as reviewed', reviewDecisionFrom([
   { state: 'DISMISSED', submitted_at: '2026-09-01T00:00:00Z', user: { login: 'ana' } }
 ]), 'review_required');
 
+// Re-requesting the reviewer who asked for changes puts the pull request back
+// in their court; GitHub keeps the old verdict on record either way.
+check('a re-requested reviewer no longer blocks', reviewDecisionFrom([
+  { state: 'CHANGES_REQUESTED', submitted_at: '2026-09-01T00:00:00Z', user: { login: 'ana' } }
+], ['Ana']), 'review_required');
+check('another reviewer still blocks', reviewDecisionFrom([
+  { state: 'CHANGES_REQUESTED', submitted_at: '2026-09-01T00:00:00Z', user: { login: 'ana' } },
+  { state: 'CHANGES_REQUESTED', submitted_at: '2026-09-02T00:00:00Z', user: { login: 'bo' } }
+], ['ana']), 'changes_requested');
+check('a re-request does not undo someone else\'s approval', reviewDecisionFrom([
+  { state: 'CHANGES_REQUESTED', submitted_at: '2026-09-01T00:00:00Z', user: { login: 'ana' } },
+  { state: 'APPROVED', submitted_at: '2026-09-02T00:00:00Z', user: { login: 'bo' } }
+], ['ana']), 'approved');
+check('a request with no reviews yet is awaited', reviewDecisionFrom([], ['ana']), 'review_required');
+
+const reRequested = summaryFromApi({
+  number: 817,
+  title: 'Invalid API response codes',
+  url: 'https://github.com/o/r/pull/817',
+  isDraft: false,
+  createdAt: '2026-09-16T00:00:00Z',
+  updatedAt: '2026-09-17T00:00:00Z',
+  additions: 1,
+  deletions: 1,
+  reviewDecision: 'CHANGES_REQUESTED',
+  latestOpinionatedReviews: { nodes: [{ state: 'CHANGES_REQUESTED', author: { login: 'ana' } }] },
+  reviewRequests: { nodes: [{ requestedReviewer: { login: 'ana' } }, { requestedReviewer: {} }] }
+});
+check('a re-request relaxes GitHub\'s stale decision', reRequested.reviewDecision, 'review_required');
+check('the relaxed row is no longer blocked', isBlocked(reRequested), false);
+check('the relaxed row awaits review', primaryFlag(reRequested).id, 'awaiting-review');
+
+const stillBlocked = summaryFromApi({
+  number: 818,
+  title: 'Still blocked',
+  url: 'https://github.com/o/r/pull/818',
+  isDraft: false,
+  createdAt: '2026-09-16T00:00:00Z',
+  updatedAt: '2026-09-17T00:00:00Z',
+  additions: 1,
+  deletions: 1,
+  reviewDecision: 'CHANGES_REQUESTED',
+  latestOpinionatedReviews: {
+    nodes: [
+      { state: 'CHANGES_REQUESTED', author: { login: 'ana' } },
+      { state: 'CHANGES_REQUESTED', author: { login: 'bo' } }
+    ]
+  },
+  reviewRequests: { nodes: [{ requestedReviewer: { login: 'ana' } }] }
+});
+check('a verdict nobody re-requested still blocks', stillBlocked.reviewDecision, 'changes_requested');
+
+// Without the opinionated-review detail there is nothing to reason from, so
+// GitHub's own decision has to stand.
+check('a bare node keeps GitHub\'s decision', summaryFromApi({
+  number: 819,
+  title: 'No detail',
+  url: 'https://github.com/o/r/pull/819',
+  isDraft: false,
+  createdAt: '2026-09-16T00:00:00Z',
+  updatedAt: '2026-09-17T00:00:00Z',
+  additions: 1,
+  deletions: 1,
+  reviewDecision: 'CHANGES_REQUESTED'
+}).reviewDecision, 'changes_requested');
+
 check('a running check is pending', checkRunStatus({ status: 'in_progress' }), 'pending');
 check('a timed-out check is a failure', checkRunStatus({ status: 'completed', conclusion: 'timed_out' }), 'failure');
 check('a skipped check is neutral', checkRunStatus({ status: 'completed', conclusion: 'skipped' }), 'neutral');

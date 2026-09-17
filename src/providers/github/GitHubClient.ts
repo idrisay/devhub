@@ -53,6 +53,7 @@ interface RawPull {
   user?: { login?: string } | null;
   head: { sha: string };
   review_comments?: number;
+  requested_reviewers?: ({ login?: string } | null)[] | null;
   updated_at: string;
 }
 
@@ -70,6 +71,8 @@ const PULL_FIELDS = `
   author { login }
   repository { nameWithOwner }
   viewerLatestReview { state }
+  latestOpinionatedReviews(first: 20) { nodes { state author { login } } }
+  reviewRequests(first: 20) { nodes { requestedReviewer { ... on User { login } } } }
   reviewThreads(first: 100) { nodes { isResolved } }
   commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
 `;
@@ -170,7 +173,12 @@ export class GitHubClient {
       state: pull.merged_at ? 'merged' : pull.draft ? 'draft' : (pull.state as 'open' | 'closed'),
       author: pull.user?.login ?? 'unknown',
       headSha: pull.head.sha,
-      reviewDecision: reviewDecisionFrom(reviews ?? []),
+      reviewDecision: reviewDecisionFrom(
+        reviews ?? [],
+        (pull.requested_reviewers ?? [])
+          .map((reviewer) => reviewer?.login)
+          .filter((login): login is string => Boolean(login))
+      ),
       reviewComments: pull.review_comments ?? 0,
       checks: (checks.check_runs ?? []).map((run) => ({
         name: run.name,
